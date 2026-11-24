@@ -1127,6 +1127,20 @@ func (e *answered) Unwrap() []error {
 //
 // The message of a mapped status is what it has always been — the value's text, then the status's message — for
 // the values that existed before the chain was kept; only errors.Is, errors.As and status.FromError see more.
+// callerEnded is the call's own context's error when the context has ended: ctx.Err(), or context.DeadlineExceeded
+// once ctx's deadline has passed even if its timer has not fired yet. gRPC ends a call at the same deadline on a timer
+// of its own, so its DEADLINE_EXCEEDED can arrive before ctx.Err() is set: that is still the caller's deadline, and
+// the caller gets the context's error, bare, as for any call cut short by its context.
+func callerEnded(ctx context.Context) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if d, ok := ctx.Deadline(); ok && !time.Now().Before(d) {
+		return context.DeadlineExceeded
+	}
+	return nil
+}
+
 func mapErr(ctx context.Context, err error) error {
 	if err == nil {
 		return nil
@@ -1158,7 +1172,7 @@ func mapErr(ctx context.Context, err error) error {
 			!errors.Is(err, context.Canceled) && !errors.Is(err, context.DeadlineExceeded) {
 			return err // the Client's own decision: nothing was cut short
 		}
-		if ctxErr := ctx.Err(); ctxErr != nil {
+		if ctxErr := callerEnded(ctx); ctxErr != nil {
 			return ctxErr
 		}
 		return fmt.Errorf("cipheron: %w", err)
@@ -1202,7 +1216,7 @@ func mapErr(ctx context.Context, err error) error {
 	case codes.Internal:
 		lead = ErrInternal
 	case codes.DeadlineExceeded, codes.Canceled:
-		if ctxErr := ctx.Err(); ctxErr != nil {
+		if ctxErr := callerEnded(ctx); ctxErr != nil {
 			return ctxErr
 		}
 		// Not this call's context: a deadline or a cancellation of gRPC's own, or of the server's.
