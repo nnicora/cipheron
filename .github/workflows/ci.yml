@@ -1,0 +1,152 @@
+name: CI
+
+# ACTIONS ARE PINNED BY COMMIT SHA, not tag: a tag is a moving pointer its owner can repoint at any commit. The trailing
+# comment is the human-readable version. Re-resolve rather than hand-edit, e.g.
+# `gh api repos/actions/checkout/commits/v7.0.1 --jq .sha`.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  # The FIPS 140-3 Go Cryptographic Module the tests run under, as releases are built (the Makefile's GOFIPS140).
+  GOFIPS140: v1.26.0
+
+jobs:
+  build-test:
+    name: build / vet / test
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      # verify re-hashes every module in the cache against go.sum, so a proxy serving altered content fails here.
+      - name: Modules are tidy and verified
+        run: |
+          go mod download
+          make check-tidy
+
+      - name: gofmt
+        run: make check-fmt
+
+      - name: Build and vet
+        run: |
+          make build
+          make vet
+
+      - name: Test (FIPS 140-3 module)
+        run: make test
+
+      - name: The application-visible API is testdata/api.txt
+        run: make check-api
+
+      - name: The spec's generated tables and the release record
+        run: make check-format-docs
+
+  race:
+    name: race detector
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Test with the race detector
+        run: make test-race
+
+  checks:
+    name: protocol checks
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      # The fixture guard compares the working tree with HEAD (the checkout's one commit is enough).
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: The frozen fixtures are exactly what is committed
+        run: make check-golden-fixtures
+      - name: Every label is built from the purpose table
+        run: make check-label-namespace
+      - name: AES-GCM draws its IV inside the module
+        run: make check-gcm-nonce
+
+  lint:
+    name: lint
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          cache: true
+      - uses: golangci/golangci-lint-action@ba0d7d2ec06a0ea1cb5fa41b2e4a3ab91d21278a # v9.3.0
+        with:
+          # Built from source with the Go setup-go installed: a release binary built with an older Go refuses a
+          # module that targets a newer one. Keep in step with the Makefile's GOLANGCI_LINT_VERSION.
+          install-mode: goinstall
+          version: v2.13.2
+          # Never --fix: a CI job does not rewrite the code it judges.
+          args: --timeout=15m
+      # The runner lints linux; darwin's peer-credential code is its own file set. GOOS changes what is analysed,
+      # not the linter binary, which the action already built for this runner.
+      - name: Lint for darwin too
+        run: |
+          BIN="$(command -v golangci-lint || echo "$(go env GOPATH)/bin/golangci-lint")"
+          GOOS=darwin "${BIN}" run --timeout=15m ./...
+
+  proto:
+    name: proto lint / format / breaking
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    env:
+      # Pinned by version and by the module's content hash, asserted against what the installed binary records
+      # (`go version -m`): the hash the Go checksum database holds for github.com/bufbuild/buf v1.73.0. The
+      # Makefile's BUF_VERSION is the same version.
+      BUF_VERSION: v1.73.0
+      BUF_MODULE_HASH: h1:fDNKlxaf+PYi20dmVM7Yt3kOfXEhwrgKDLMNZFjztDs=
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Install buf (pinned by version and by content hash)
+        run: |
+          set -euo pipefail
+          go install "github.com/bufbuild/buf/cmd/buf@${BUF_VERSION}"
+          BIN="$(go env GOPATH)/bin/buf"
+          GOT="$(go version -m "${BIN}" | awk '$1 == "mod" && $2 == "github.com/bufbuild/buf" { print $3 " " $4 }')"
+          if [ "${GOT}" != "${BUF_VERSION} ${BUF_MODULE_HASH}" ]; then
+            echo "::error::the installed buf's module is '${GOT}', expected '${BUF_VERSION} ${BUF_MODULE_HASH}'"
+            exit 1
+          fi
+          echo "$(go env GOPATH)/bin" >> "${GITHUB_PATH}"
+
+      - name: buf format and lint
+        run: make lint-proto
+
+      # A pull request's API against its base: the base tip is fetched as a local branch (it is not reachable from
+      # the merge commit within a shallow checkout). A base without proto/v1 has nothing to break.
+      - name: buf breaking against the base branch
+        if: github.event_name == 'pull_request'
+        env:
+          BASE_REF: ${{ github.base_ref }}
+        run: |
+          set -euo pipefail
+          git fetch --no-tags --depth=1 origin "+refs/heads/${BASE_REF}:refs/heads/buf-base"
+          make check-proto-breaking BUF_BASE=buf-base

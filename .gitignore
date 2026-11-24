@@ -1,0 +1,15 @@
+# Editors
+.idea/
+.vscode/
+*.swp
+.DS_Store
+
+# Test and build output
+*.test
+*.out
+cover.html
+/bin/
+
+# A local workspace (go.work) is never committed: the module builds on its own.
+go.work
+go.work.sum

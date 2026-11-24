@@ -1,0 +1,7 @@
+ciphertext read 3,4,5,6 write 0:3 1:6 2:4 3:5
+tenant key blob read 1 write 0:1
+segmented object read 1 write 0:1
+transcripts and seal infos read 1 write 0:1
+key statement read 1 write 0:1
+key statement export read 1 write 0:1
+encrypted JSON field read 1 write 0:1

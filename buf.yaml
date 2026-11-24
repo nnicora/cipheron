@@ -1,0 +1,18 @@
+version: v2
+modules:
+  - path: proto
+  # google/api/annotations.proto and http.proto, vendored for the HTTP routes; not linted.
+  - path: third_party/googleapis
+lint:
+  use:
+    - STANDARD
+  except:
+    # The repository is cipheron's, so its one API lives at proto/v1 rather than proto/cipheron/v1; the package
+    # keeps its name, cipheron.v1, because the package is the wire (the service, RPC and type names, the HTTP
+    # routes). The directory therefore cannot match the package.
+    - PACKAGE_DIRECTORY_MATCH
+  ignore:
+    - third_party/googleapis
+breaking:
+  use:
+    - FILE

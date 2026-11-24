@@ -1,0 +1,1319 @@
+{
+  "swagger": "2.0",
+  "info": {
+    "title": "v1/cipheron.proto",
+    "version": "version not set"
+  },
+  "tags": [
+    {
+      "name": "CipherService"
+    }
+  ],
+  "consumes": [
+    "application/json"
+  ],
+  "produces": [
+    "application/json"
+  ],
+  "paths": {
+    "/v1/cipher/{profile}/decrypt": {
+      "post": {
+        "summary": "Decrypt decrypts a ciphertext Encrypt or ReEncrypt produced for the profile — of any format the profile can\nread: 4 and 5 (shared, derived), 3 and 6 (wrapped) — and returns the plaintext sealed to the caller's one-time\npublic key. Operation \"decrypt\".",
+        "operationId": "CipherService_Decrypt",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1DecryptResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "profile",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/CipherServiceDecryptBody"
+            }
+          }
+        ],
+        "tags": [
+          "CipherService"
+        ]
+      }
+    },
+    "/v1/cipher/{profile}/decrypt-batch": {
+      "post": {
+        "summary": "DecryptBatch is Decrypt over a list of ciphertexts of one scope, every plaintext sealed to the one\nrecipient_public_key. Operation \"decrypt\"; transcript label \"decrypt-batch\".",
+        "operationId": "CipherService_DecryptBatch",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1DecryptBatchResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "profile",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/CipherServiceDecryptBatchBody"
+            }
+          }
+        ],
+        "tags": [
+          "CipherService"
+        ]
+      }
+    },
+    "/v1/cipher/{profile}/encrypt": {
+      "post": {
+        "summary": "Encrypt opens a plaintext sealed to the profile's HPKE key and returns it encrypted in cipheron's\nciphertext format, under a key of its own derived from the current data key: format 4 (shared, derived; format\n5 with associated_data), format 3 (wrapped; 6 with associated_data). Operation \"encrypt\".",
+        "operationId": "CipherService_Encrypt",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1EncryptResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "profile",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/CipherServiceEncryptBody"
+            }
+          }
+        ],
+        "tags": [
+          "CipherService"
+        ]
+      }
+    },
+    "/v1/cipher/{profile}/encrypt-batch": {
+      "post": {
+        "summary": "EncryptBatch is Encrypt over a list of plaintexts of one scope. Operation \"encrypt\"; transcript label\n\"encrypt-batch\".",
+        "operationId": "CipherService_EncryptBatch",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1EncryptBatchResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "profile",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/CipherServiceEncryptBatchBody"
+            }
+          }
+        ],
+        "tags": [
+          "CipherService"
+        ]
+      }
+    },
+    "/v1/cipher/{profile}/public-key": {
+      "post": {
+        "summary": "PublicKey returns the profile's identity keys, its tenancy, its signing keys (signed by the response key) and\nits key-context digest. It is answered to any caller the profile lists, without auth.",
+        "operationId": "CipherService_PublicKey",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1PublicKeyResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "profile",
+            "description": "The profile, as configured.",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/CipherServicePublicKeyBody"
+            }
+          }
+        ],
+        "tags": [
+          "CipherService"
+        ]
+      }
+    },
+    "/v1/cipher/{profile}/reencrypt": {
+      "post": {
+        "summary": "ReEncrypt decrypts a stored ciphertext of the profile and encrypts the same plaintext again, under the current\nmaster version (format 4, or 5 with to_associated_data) — or, in a wrapped profile, under\nto_tenant_key (format 3, or 6) — without the plaintext ever leaving cipheron. It reads every format the profile\ncan read (as Decrypt). It is how a service moves its rows to new keys; reading never requires it.\nOperation \"reencrypt\" within the profile; with to_profile (a cross-profile move) the caller's entry needs\n\"export\" on this profile and \"import\" on to_profile instead, and \"retenant\" on this profile when the move changes\nthe tenant (another tenant, or between a shared and a perTenant profile) — both sides still signed under\n\"reencrypt\".",
+        "operationId": "CipherService_ReEncrypt",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1ReEncryptResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "profile",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/CipherServiceReEncryptBody"
+            }
+          }
+        ],
+        "tags": [
+          "CipherService"
+        ]
+      }
+    },
+    "/v1/cipher/{profile}/reencrypt-batch": {
+      "post": {
+        "summary": "ReEncryptBatch is ReEncrypt (within the profile) over a list of ciphertexts of one scope. Operation\n\"reencrypt\"; transcript label \"reencrypt-batch\". An item with associated_data and no to_associated_data is\nrefused as ReEncrypt refuses it, as that item's error.",
+        "operationId": "CipherService_ReEncryptBatch",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1ReEncryptBatchResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "profile",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/CipherServiceReEncryptBatchBody"
+            }
+          }
+        ],
+        "tags": [
+          "CipherService"
+        ]
+      }
+    },
+    "/v1/cipher/{profile}/rewrap-tenant-key": {
+      "post": {
+        "summary": "RewrapTenantKey opens a tenant key blob and returns the SAME tenant keys (same key id, same signing key, same\ncreation time, same fingerprint) wrapped under the current tenant-wrapping version. Operation\n\"provision\"; its transcripts carry the label \"rewrap-tenant-key\", so its answers are never CreateTenantKey's.\nRefused in a shared or derived profile.",
+        "operationId": "CipherService_RewrapTenantKey",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1RewrapTenantKeyResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "profile",
+            "description": "A perTenant wrapped profile.",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/CipherServiceRewrapTenantKeyBody"
+            }
+          }
+        ],
+        "tags": [
+          "CipherService"
+        ]
+      }
+    },
+    "/v1/cipher/{profile}/rewrap-tenant-key-batch": {
+      "post": {
+        "summary": "RewrapTenantKeyBatch is RewrapTenantKey over a list of (tenant, blob). Operation \"provision\"; transcript label\n\"rewrap-tenant-key-batch\". Each item's tenant is checked as RewrapTenantKey's (a tenant id, the profile's\ntenancy); a refusal is that item's.",
+        "operationId": "CipherService_RewrapTenantKeyBatch",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1RewrapTenantKeyBatchResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "profile",
+            "description": "A perTenant wrapped profile.",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/CipherServiceRewrapTenantKeyBatchBody"
+            }
+          }
+        ],
+        "tags": [
+          "CipherService"
+        ]
+      }
+    },
+    "/v1/cipher/{profile}/sign": {
+      "post": {
+        "summary": "Sign opens data sealed to the profile's HPKE key and signs it: in a shared profile with the active signing key\nover the data, in a derived profile with the active signing key over transport.TenantSignedMessage, in a\nwrapped profile with the tenant key's signing key over the data. Operation \"sign\".",
+        "operationId": "CipherService_Sign",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1SignResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "profile",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/CipherServiceSignBody"
+            }
+          }
+        ],
+        "tags": [
+          "CipherService"
+        ]
+      }
+    },
+    "/v1/cipher/{profile}/tenant-key": {
+      "post": {
+        "summary": "CreateTenantKey makes a new key for a tenant of a perTenant wrapped profile — a storage key and an Ed25519\nsigning key, from cipheron's approved random bit generator — and returns it wrapped (tenant_key) under the\ncurrent tenant-wrapping version, for the application to store. Operation \"provision\". cipheron\nkeeps nothing: each call makes another key. Refused in a shared or derived profile.",
+        "operationId": "CipherService_CreateTenantKey",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1CreateTenantKeyResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "profile",
+            "description": "A perTenant wrapped profile.",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/CipherServiceCreateTenantKeyBody"
+            }
+          }
+        ],
+        "tags": [
+          "CipherService"
+        ]
+      }
+    }
+  },
+  "definitions": {
+    "CipherServiceCreateTenantKeyBody": {
+      "type": "object",
+      "properties": {
+        "tenant": {
+          "type": "string",
+          "description": "The tenant the key is for."
+        },
+        "requestNonce": {
+          "type": "string",
+          "format": "byte",
+          "description": "As EncryptRequest's."
+        },
+        "auth": {
+          "$ref": "#/definitions/v1RequestAuth",
+          "description": "Required when the caller entry has request keys (operation \"provision\", request digest\ntransport.ProvisionDigest(tenant): tenant and an empty tenant key)."
+        }
+      }
+    },
+    "CipherServiceDecryptBatchBody": {
+      "type": "object",
+      "properties": {
+        "recipientPublicKey": {
+          "type": "string",
+          "format": "byte",
+          "description": "The one-time public key every plaintext of the answer is sealed to."
+        },
+        "items": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/v1DecryptBatchItem"
+          }
+        },
+        "tenant": {
+          "type": "string"
+        },
+        "tenantKey": {
+          "type": "string",
+          "format": "byte"
+        },
+        "requestNonce": {
+          "type": "string",
+          "format": "byte"
+        },
+        "auth": {
+          "$ref": "#/definitions/v1RequestAuth",
+          "description": "Label \"decrypt-batch\"; item digests transport.DecryptDigestAAD(recipient_public_key, …)."
+        }
+      }
+    },
+    "CipherServiceDecryptBody": {
+      "type": "object",
+      "properties": {
+        "recipientPublicKey": {
+          "type": "string",
+          "format": "byte",
+          "description": "The client's one-time P-256 public key (uncompressed point) the plaintext is sealed back to."
+        },
+        "ciphertext": {
+          "type": "string",
+          "format": "byte",
+          "description": "A ciphertext of the profile: format 4 or 5 (shared, derived), 3 or 6 (wrapped); 5 and 6 need associated_data."
+        },
+        "requestNonce": {
+          "type": "string",
+          "format": "byte",
+          "description": "As EncryptRequest's."
+        },
+        "auth": {
+          "$ref": "#/definitions/v1RequestAuth",
+          "description": "Required when the caller entry has request keys."
+        },
+        "tenant": {
+          "type": "string",
+          "description": "As EncryptRequest's."
+        },
+        "tenantKey": {
+          "type": "string",
+          "format": "byte",
+          "description": "As EncryptRequest's."
+        },
+        "associatedData": {
+          "type": "string",
+          "format": "byte",
+          "description": "The associated data the ciphertext was made with: required for format 5 and 6, refused for 3 and 4\n(CIPHERON_ASSOCIATED_DATA). When present it is the request digest's last field (transport.DecryptDigestAAD)."
+        }
+      }
+    },
+    "CipherServiceEncryptBatchBody": {
+      "type": "object",
+      "properties": {
+        "items": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/v1EncryptBatchItem"
+          },
+          "description": "1 to batch.maxItems items, at most batch.maxBytes of payload in all."
+        },
+        "tenant": {
+          "type": "string",
+          "description": "Every item's tenant and blob: as EncryptRequest's."
+        },
+        "tenantKey": {
+          "type": "string",
+          "format": "byte"
+        },
+        "requestNonce": {
+          "type": "string",
+          "format": "byte"
+        },
+        "auth": {
+          "$ref": "#/definitions/v1RequestAuth",
+          "description": "Over the request transcript under the label \"encrypt-batch\", request digest transport.BatchDigest of each\nitem's transport.EncryptDigestAAD."
+        }
+      }
+    },
+    "CipherServiceEncryptBody": {
+      "type": "object",
+      "properties": {
+        "enc": {
+          "type": "string",
+          "format": "byte",
+          "description": "The HPKE encapsulated key (65 bytes)."
+        },
+        "sealedPlaintext": {
+          "type": "string",
+          "format": "byte",
+          "description": "The plaintext, sealed with HPKE to the profile's key (info binds profile, \"encrypt\", the tenant and the requester's request key)."
+        },
+        "requestNonce": {
+          "type": "string",
+          "format": "byte",
+          "description": "16 random bytes, new for every request: the response is signed over it, and RequestAuth makes it single-use."
+        },
+        "auth": {
+          "$ref": "#/definitions/v1RequestAuth",
+          "description": "Required when the caller entry has request keys."
+        },
+        "tenant": {
+          "type": "string",
+          "description": "The tenant (1 to 2048 bytes of printable ASCII, 0x21 to 0x7E): required in a perTenant profile (wrapped or\nderived), refused in a shared one."
+        },
+        "tenantKey": {
+          "type": "string",
+          "format": "byte",
+          "description": "The tenant's key blob (CreateTenantKey, RewrapTenantKey): required in a perTenant wrapped profile, refused in a\nshared or derived one."
+        },
+        "associatedData": {
+          "type": "string",
+          "format": "byte",
+          "description": "Caller associated data (1 to 65536 bytes; empty: none): bound into the ciphertext's AEAD, never stored in it.\nWith it the ciphertext is format 5 (shared, derived) or 6 (wrapped), which records that it is required: Decrypt\nrefuses it without associated data (CIPHERON_ASSOCIATED_DATA) and with other associated data it does not\ndecrypt. When present it is the request digest's last field (transport.EncryptDigestAAD)."
+        }
+      }
+    },
+    "CipherServicePublicKeyBody": {
+      "type": "object",
+      "properties": {
+        "requestNonce": {
+          "type": "string",
+          "format": "byte",
+          "description": "16 random bytes, new for every request (transport.NonceLen): keys_signature is made over it\n(transport.SigningKeysTranscript), so the answer is FRESH — a recorded older answer (an older signing-key list\nor context digest) does not verify for this request. A client checks keys_signature under its own nonce and\nrefuses any other answer. Any other length is refused (INVALID_ARGUMENT), none included: an answer over the\nempty nonce would pass for every later request without one, for the identity's life."
+        }
+      }
+    },
+    "CipherServiceReEncryptBatchBody": {
+      "type": "object",
+      "properties": {
+        "items": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/v1ReEncryptBatchItem"
+          }
+        },
+        "tenant": {
+          "type": "string"
+        },
+        "tenantKey": {
+          "type": "string",
+          "format": "byte",
+          "description": "Wrapped profile: the blob every item was made under, and the one to make them under."
+        },
+        "toTenantKey": {
+          "type": "string",
+          "format": "byte"
+        },
+        "requestNonce": {
+          "type": "string",
+          "format": "byte"
+        },
+        "auth": {
+          "$ref": "#/definitions/v1RequestAuth",
+          "description": "Label \"reencrypt-batch\"; item digests transport.ReEncryptDigestExt."
+        }
+      }
+    },
+    "CipherServiceReEncryptBody": {
+      "type": "object",
+      "properties": {
+        "ciphertext": {
+          "type": "string",
+          "format": "byte",
+          "description": "A stored ciphertext of the profile, of any format it can read (as DecryptRequest's; 5 and 6 need\nassociated_data)."
+        },
+        "tenant": {
+          "type": "string",
+          "description": "As EncryptRequest's: required in a perTenant profile (wrapped or derived), refused in a shared one."
+        },
+        "tenantKey": {
+          "type": "string",
+          "format": "byte",
+          "description": "Wrapped profile: required — the blob of the tenant key the ciphertext was made under (its key id must be the\nciphertext's). Refused in a shared or derived profile."
+        },
+        "toTenantKey": {
+          "type": "string",
+          "format": "byte",
+          "description": "Wrapped profile: required — the blob of the tenant key to encrypt under (the same tenant's; usually its new\nkey, made by CreateTenantKey). Refused in a shared or derived profile, whose result is always under the\ncurrent master version."
+        },
+        "requestNonce": {
+          "type": "string",
+          "format": "byte",
+          "description": "As EncryptRequest's."
+        },
+        "auth": {
+          "$ref": "#/definitions/v1RequestAuth",
+          "description": "Required when the caller entry has request keys (operation \"reencrypt\", request digest\ntransport.ReEncryptDigest(ciphertext, tenant, tenant_key, to_tenant_key))."
+        },
+        "associatedData": {
+          "type": "string",
+          "format": "byte",
+          "description": "The associated data the stored ciphertext was made with (as DecryptRequest's)."
+        },
+        "toAssociatedData": {
+          "type": "string",
+          "format": "byte",
+          "description": "The associated data the new ciphertext is made with (as EncryptRequest's); empty: none. The same bytes as\nassociated_data: a re-encryption keeps the binding. Empty with associated_data set drops it, which is refused to\nevery caller (INVALID_ARGUMENT, CIPHERON_ASSOCIATED_DATA); other bytes — or some where associated_data is empty —\nre-bind the value, served only to a caller entry granted decrypt on this profile and encrypt on the profile the new\nciphertext is made in (PERMISSION_DENIED otherwise). Both are decided before anything is decrypted."
+        },
+        "toProfile": {
+          "type": "string",
+          "description": "Cross-profile: the profile to re-encrypt into, served by the same cipheron (empty, or the request's own profile:\nwithin the profile). The caller's connection identity must be listed in it with operation \"import\" (and in\nthis profile with \"export\", and with \"retenant\" when the move changes the tenant), and the target's tenancy rules\napply to to_tenant and to_tenant_key. The plaintext never leaves cipheron. Import is a write grant into\nto_profile: whatever its holder can export becomes to_profile's data."
+        },
+        "toTenant": {
+          "type": "string",
+          "description": "Cross-profile: the tenant in to_profile (perTenant targets; empty: the request's tenant). Refused within a\nprofile: a ciphertext never moves to another tenant of the same profile."
+        },
+        "toAuth": {
+          "$ref": "#/definitions/v1RequestAuth",
+          "description": "Cross-profile: required when the caller's entry in to_profile has request keys — a signature by one of them over\nthe request transcript of to_profile (same operation, timestamp rules, nonce and digest), held to that entry's\nreplay cache."
+        }
+      }
+    },
+    "CipherServiceRewrapTenantKeyBatchBody": {
+      "type": "object",
+      "properties": {
+        "items": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/v1RewrapTenantKeyBatchItem"
+          }
+        },
+        "requestNonce": {
+          "type": "string",
+          "format": "byte"
+        },
+        "auth": {
+          "$ref": "#/definitions/v1RequestAuth",
+          "description": "Label \"rewrap-tenant-key-batch\"; item digests transport.RewrapTenantKeyDigest."
+        }
+      }
+    },
+    "CipherServiceRewrapTenantKeyBody": {
+      "type": "object",
+      "properties": {
+        "tenant": {
+          "type": "string",
+          "description": "The tenant."
+        },
+        "tenantKey": {
+          "type": "string",
+          "format": "byte",
+          "description": "The tenant's key blob (CreateTenantKeyResponse.tenant_key's layout), one the profile can open."
+        },
+        "requestNonce": {
+          "type": "string",
+          "format": "byte",
+          "description": "As EncryptRequest's."
+        },
+        "auth": {
+          "$ref": "#/definitions/v1RequestAuth",
+          "description": "Required when the caller entry has request keys (transcript label \"rewrap-tenant-key\", request digest\ntransport.RewrapTenantKeyDigest(tenant, tenant_key)). Authorized as operation \"provision\"."
+        }
+      }
+    },
+    "CipherServiceSignBody": {
+      "type": "object",
+      "properties": {
+        "enc": {
+          "type": "string",
+          "format": "byte",
+          "description": "The HPKE encapsulated key (65 bytes)."
+        },
+        "sealedData": {
+          "type": "string",
+          "format": "byte",
+          "description": "The data to sign, sealed with HPKE to the profile's key (info binds profile, \"sign\", the tenant and the requester's request key)."
+        },
+        "requestNonce": {
+          "type": "string",
+          "format": "byte",
+          "description": "As EncryptRequest's."
+        },
+        "auth": {
+          "$ref": "#/definitions/v1RequestAuth",
+          "description": "Required when the caller entry has request keys."
+        },
+        "tenant": {
+          "type": "string",
+          "description": "As EncryptRequest's."
+        },
+        "tenantKey": {
+          "type": "string",
+          "format": "byte",
+          "description": "As EncryptRequest's."
+        }
+      }
+    },
+    "protobufAny": {
+      "type": "object",
+      "properties": {
+        "@type": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": {}
+    },
+    "rpcStatus": {
+      "type": "object",
+      "properties": {
+        "code": {
+          "type": "integer",
+          "format": "int32"
+        },
+        "message": {
+          "type": "string"
+        },
+        "details": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/protobufAny"
+          }
+        }
+      }
+    },
+    "v1CreateTenantKeyResponse": {
+      "type": "object",
+      "properties": {
+        "tenantKey": {
+          "type": "string",
+          "format": "byte",
+          "description": "The tenant key blob (transport.ParseTenantKey), version 1: \"CPT1\" | 1 | key id (16) | lp(profile) | lp(tenant) |\nsigning public key (32) | len (1) | wrapping master version id | created (8) | salt (32) |\nnonce (12) | the wrapped storage and signing keys (96) and tag (16) — 226 bytes plus the profile, the tenant and\nthe version id, at most 2369 (transport.MaxTenantKeyLen). The salt makes each blob's wrap key its own. The\napplication stores it; deleting it (and every older blob of the same key) erases the tenant's keys."
+        },
+        "signingPublicKey": {
+          "type": "string",
+          "format": "byte",
+          "description": "The tenant key's Ed25519 signing public key (32 bytes): Sign's signatures for the tenant verify under it."
+        },
+        "fingerprint": {
+          "type": "string",
+          "description": "The tenant key's fingerprint (transport.TenantFingerprint), which a client may pin."
+        },
+        "responseSignature": {
+          "type": "string",
+          "format": "byte",
+          "description": "Over the response transcript: operation \"provision\", request digest transport.ProvisionDigest(tenant),\nresponse digest transport.TenantKeyResponseDigest(tenant_key, signing_public_key, fingerprint)."
+        }
+      }
+    },
+    "v1DecryptBatchItem": {
+      "type": "object",
+      "properties": {
+        "ciphertext": {
+          "type": "string",
+          "format": "byte"
+        },
+        "associatedData": {
+          "type": "string",
+          "format": "byte"
+        }
+      }
+    },
+    "v1DecryptBatchResponse": {
+      "type": "object",
+      "properties": {
+        "results": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/v1DecryptBatchResult"
+          }
+        },
+        "responseSignature": {
+          "type": "string",
+          "format": "byte"
+        }
+      }
+    },
+    "v1DecryptBatchResult": {
+      "type": "object",
+      "properties": {
+        "enc": {
+          "type": "string",
+          "format": "byte"
+        },
+        "sealedPlaintext": {
+          "type": "string",
+          "format": "byte"
+        },
+        "error": {
+          "$ref": "#/definitions/v1ItemError"
+        }
+      }
+    },
+    "v1DecryptResponse": {
+      "type": "object",
+      "properties": {
+        "enc": {
+          "type": "string",
+          "format": "byte",
+          "description": "The HPKE encapsulated key."
+        },
+        "sealedPlaintext": {
+          "type": "string",
+          "format": "byte",
+          "description": "The plaintext, sealed with HPKE to recipient_public_key (info binds profile, \"decrypt\" and the tenant)."
+        },
+        "responseSignature": {
+          "type": "string",
+          "format": "byte",
+          "description": "Over the response transcript: operation \"decrypt\", request digest transport.DecryptDigest(\nrecipient_public_key, ciphertext, tenant, tenant_key) — transport.DecryptDigestAAD, with associated_data as a\nlast field, when it is set —, response digest of recipient_public_key, enc and sealed_plaintext."
+        }
+      }
+    },
+    "v1EncryptBatchItem": {
+      "type": "object",
+      "properties": {
+        "enc": {
+          "type": "string",
+          "format": "byte",
+          "description": "As EncryptRequest's, sealed for the batch's tenant."
+        },
+        "sealedPlaintext": {
+          "type": "string",
+          "format": "byte"
+        },
+        "associatedData": {
+          "type": "string",
+          "format": "byte"
+        }
+      }
+    },
+    "v1EncryptBatchResponse": {
+      "type": "object",
+      "properties": {
+        "results": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/v1EncryptBatchResult"
+          },
+          "description": "One per item, in the items' order."
+        },
+        "responseSignature": {
+          "type": "string",
+          "format": "byte",
+          "description": "Over the response transcript under \"encrypt-batch\": response digest transport.BatchDigest of each result's\ntransport.ItemResultDigest (CiphertextResponseDigest's fields) or transport.ItemErrorDigest."
+        }
+      }
+    },
+    "v1EncryptBatchResult": {
+      "type": "object",
+      "properties": {
+        "ciphertext": {
+          "type": "string",
+          "format": "byte"
+        },
+        "error": {
+          "$ref": "#/definitions/v1ItemError"
+        }
+      },
+      "description": "A batch item's result: the answer's fields, or error."
+    },
+    "v1EncryptResponse": {
+      "type": "object",
+      "properties": {
+        "ciphertext": {
+          "type": "string",
+          "format": "byte",
+          "description": "The stored ciphertext. Shared and derived profiles: format 4, \"CPH1\" | 4 | len (1) | master version id |\nsalt (32) | nonce (12) | AES-256-GCM ciphertext and tag (16); format 5, the same\nlayout with the byte 5, made with associated_data. Wrapped profiles: format 3, \"CPH1\" | 3 | tenant key id (16) |\nsalt (32) | nonce (12) | ciphertext and tag; format 6, the same with the byte 6 and associated_data\n(transport.ParseKeyID reads them all)."
+        },
+        "responseSignature": {
+          "type": "string",
+          "format": "byte",
+          "description": "Over the response transcript: operation \"encrypt\", request digest transport.EncryptDigest(enc,\nsealed_plaintext, tenant, tenant_key) — transport.EncryptDigestAAD, with associated_data as a last field, when\nit is set —, response digest transport.CiphertextResponseDigest(ciphertext)."
+        }
+      }
+    },
+    "v1HpkeSuite": {
+      "type": "object",
+      "properties": {
+        "kemId": {
+          "type": "integer",
+          "format": "int64"
+        },
+        "kdfId": {
+          "type": "integer",
+          "format": "int64"
+        },
+        "aeadId": {
+          "type": "integer",
+          "format": "int64"
+        }
+      },
+      "description": "HpkeSuite names an HPKE suite by its RFC 9180 identifiers. This protocol implements one: DHKEM(P-256,\nHKDF-SHA256), HKDF-SHA256, AES-256-GCM (0x0010, 0x0001, 0x0002)."
+    },
+    "v1IdentityKey": {
+      "type": "object",
+      "properties": {
+        "role": {
+          "$ref": "#/definitions/v1IdentityKeyRole"
+        },
+        "hpkeSuite": {
+          "$ref": "#/definitions/v1HpkeSuite",
+          "description": "The suite of an HPKE key; unset for a response key."
+        },
+        "signatureAlgorithm": {
+          "$ref": "#/definitions/v1SignatureAlgorithm",
+          "description": "The algorithm of a response key; UNSPECIFIED for an HPKE key."
+        },
+        "publicKey": {
+          "type": "string",
+          "format": "byte"
+        }
+      },
+      "description": "IdentityKey is a key ADDED to a profile's identity after it was made (a post-quantum or hybrid key, a later\nrelease): the fingerprint covers it (fingerprint version 2), so a pin covers it. This release adds none, and a\nclient uses none: it tolerates any role, suite and algorithm here."
+    },
+    "v1IdentityKeyRole": {
+      "type": "string",
+      "enum": [
+        "IDENTITY_KEY_ROLE_UNSPECIFIED",
+        "IDENTITY_KEY_ROLE_HPKE",
+        "IDENTITY_KEY_ROLE_RESPONSE"
+      ],
+      "default": "IDENTITY_KEY_ROLE_UNSPECIFIED",
+      "description": "IdentityKeyRole is what an identity key added to a profile's identity is for.\n\n - IDENTITY_KEY_ROLE_HPKE: A key requests may be sealed to (hpke_suite names its suite).\n - IDENTITY_KEY_ROLE_RESPONSE: A key answers may be signed by (signature_algorithm names its algorithm)."
+    },
+    "v1ItemError": {
+      "type": "object",
+      "properties": {
+        "code": {
+          "type": "integer",
+          "format": "int64"
+        },
+        "reason": {
+          "type": "string"
+        },
+        "message": {
+          "type": "string"
+        }
+      },
+      "description": "ItemError is one batch item's failure: the gRPC code (google.rpc.Code) and, when the single operation would have\ncarried one, its ErrorInfo reason (CIPHERON_…); the message is for humans. It is covered by the batch's response\nsignature like a result."
+    },
+    "v1PublicKeyResponse": {
+      "type": "object",
+      "properties": {
+        "hpkePublicKey": {
+          "type": "string",
+          "format": "byte",
+          "description": "Identity: the HPKE public key requests are sealed to (SerializePublicKey of RFC 9180: an uncompressed P-256\npoint, 65 bytes). Never rotates."
+        },
+        "responsePublicKey": {
+          "type": "string",
+          "format": "byte",
+          "description": "Identity: the Ed25519 public key (32 bytes) every response_signature and keys_signature verifies under.\nNever rotates."
+        },
+        "tenancy": {
+          "$ref": "#/definitions/v1Tenancy",
+          "description": "Identity: the profile's tenancy."
+        },
+        "signingKeys": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/v1SigningKey"
+          },
+          "description": "Every signing key version the profile has ever signed with, in canonical order (ascending key_id), exactly one\nACTIVE, any number VERIFY_ONLY or REVOKED. Shared and derived profiles: at least one. Wrapped profiles: none\n(each tenant key has its own)."
+        },
+        "keysSignature": {
+          "type": "string",
+          "format": "byte",
+          "description": "Ed25519 by the response key over transport.SigningKeysTranscript: label \"cipheron/v1|signed_keys\", the transcript\nversion (1), profile, tenancy, context_digest, the request's request_nonce, then the number of signing keys and\neach one (key_id, the state's number, public_key) in canonical order."
+        },
+        "contextDigest": {
+          "type": "string",
+          "description": "transport.ContextDigest of the profile's key context: \"sha256:\" and 64 lower-case hex digits. Members of a\ngroup sharing the profile must answer the same one; a service may pin it (expectContext)."
+        },
+        "hpkeSuite": {
+          "$ref": "#/definitions/v1HpkeSuite",
+          "description": "Identity: the suite of hpke_public_key. Always written; a client refuses an answer without it and seals nothing\nto a key of a suite it does not implement."
+        },
+        "responseKeyAlgorithm": {
+          "$ref": "#/definitions/v1SignatureAlgorithm",
+          "description": "Identity: the algorithm of response_public_key (ED25519). Always written."
+        },
+        "additionalIdentityKeys": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/v1IdentityKey"
+          },
+          "description": "Identity: keys added to the identity after the profile was made (none in this release). Covered by the\nfingerprint (version 2)."
+        },
+        "keyStatement": {
+          "type": "string",
+          "format": "byte",
+          "description": "The profile's key statement (transport.KeyStatement): its identity, tenancy, context digest, signing keys with\ntheir states and algorithms and the time cipheron issued it — WITHOUT a nonce, so it can be published and\nverified offline against the pinned fingerprint (the identity inside is what the fingerprint covers). It\nproves no freshness: a verifier bounds its age by issued_at."
+        },
+        "keyStatementSignature": {
+          "type": "string",
+          "format": "byte",
+          "description": "Ed25519 by the response key over key_statement's bytes."
+        }
+      },
+      "description": "PublicKeyResponse is the profile's public keys.\n\nThe profile's fingerprint (transport.Fingerprint; `cipheron keygen` prints it, a client pins it) covers the\nprofile, tenancy, hpke_public_key and response_public_key — the identity, which never changes — and their suite\nand algorithm and any additional identity key. A CLASSICAL identity (hpke_suite 0x0010/0x0001/0x0002, an\nEd25519 response key, no additional key: every profile this release makes) has fingerprint version 1; any other\nhas fingerprint version 2, which names the suite, the algorithms and every key (transport.Fingerprint).\nsigning_keys and context_digest are not in it: they are authenticated by keys_signature, which verifies under the\n(pinned) response key."
+    },
+    "v1ReEncryptBatchItem": {
+      "type": "object",
+      "properties": {
+        "ciphertext": {
+          "type": "string",
+          "format": "byte"
+        },
+        "associatedData": {
+          "type": "string",
+          "format": "byte"
+        },
+        "toAssociatedData": {
+          "type": "string",
+          "format": "byte"
+        }
+      }
+    },
+    "v1ReEncryptBatchResponse": {
+      "type": "object",
+      "properties": {
+        "results": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/v1ReEncryptBatchResult"
+          }
+        },
+        "responseSignature": {
+          "type": "string",
+          "format": "byte"
+        }
+      }
+    },
+    "v1ReEncryptBatchResult": {
+      "type": "object",
+      "properties": {
+        "ciphertext": {
+          "type": "string",
+          "format": "byte"
+        },
+        "error": {
+          "$ref": "#/definitions/v1ItemError"
+        }
+      }
+    },
+    "v1ReEncryptResponse": {
+      "type": "object",
+      "properties": {
+        "ciphertext": {
+          "type": "string",
+          "format": "byte",
+          "description": "The same plaintext, encrypted again: format 4 (5 with to_associated_data) under the current master version\n(shared, derived), format 3 (6) under to_tenant_key (wrapped) — of to_profile's tenancy when set."
+        },
+        "responseSignature": {
+          "type": "string",
+          "format": "byte",
+          "description": "Over the response transcript: operation \"reencrypt\", request digest transport.ReEncryptDigest (with the\nextension group transport.ReEncryptDigestExt when any of fields 9 to 12 is set), response digest\ntransport.CiphertextResponseDigest(ciphertext)."
+        },
+        "toResponseSignature": {
+          "type": "string",
+          "format": "byte",
+          "description": "Cross-profile only: the same transcript under to_profile, signed by to_profile's response key."
+        }
+      }
+    },
+    "v1RequestAuth": {
+      "type": "object",
+      "properties": {
+        "timestampMs": {
+          "type": "string",
+          "format": "int64",
+          "description": "Milliseconds since the Unix epoch, when the client made the request."
+        },
+        "signature": {
+          "type": "string",
+          "format": "byte",
+          "description": "The Ed25519 signature (64 bytes)."
+        }
+      },
+      "description": "RequestAuth is a caller's proof that it made this request now: an Ed25519 signature by one of the caller\nentry's request keys over the request transcript (transport.RequestTranscript): label\n\"cipheron/v1|signed_request\", the transcript version (1), the profile, the operation's transcript label,\ntimestamp_ms, the request's request_nonce and a digest of the request's payload fields. cipheron accepts a\ntimestamp within its configured skew and each nonce once. The answer's response_signature is over the response\ntranscript (transport.ResponseTranscript, label \"cipheron/v1|signed_response\", with the answering cipheron's\nkey-context digest)."
+    },
+    "v1RewrapTenantKeyBatchItem": {
+      "type": "object",
+      "properties": {
+        "tenant": {
+          "type": "string"
+        },
+        "tenantKey": {
+          "type": "string",
+          "format": "byte"
+        }
+      }
+    },
+    "v1RewrapTenantKeyBatchResponse": {
+      "type": "object",
+      "properties": {
+        "results": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/v1RewrapTenantKeyBatchResult"
+          }
+        },
+        "responseSignature": {
+          "type": "string",
+          "format": "byte"
+        }
+      }
+    },
+    "v1RewrapTenantKeyBatchResult": {
+      "type": "object",
+      "properties": {
+        "tenantKey": {
+          "type": "string",
+          "format": "byte"
+        },
+        "signingPublicKey": {
+          "type": "string",
+          "format": "byte"
+        },
+        "fingerprint": {
+          "type": "string"
+        },
+        "error": {
+          "$ref": "#/definitions/v1ItemError"
+        }
+      }
+    },
+    "v1RewrapTenantKeyResponse": {
+      "type": "object",
+      "properties": {
+        "tenantKey": {
+          "type": "string",
+          "format": "byte",
+          "description": "The same tenant key wrapped under the current tenant-wrapping version: the same key id, signing\npublic key and creation time, in the one blob layout (CreateTenantKeyResponse.tenant_key). The old blob keeps\nopening while its wrapping version is listed."
+        },
+        "signingPublicKey": {
+          "type": "string",
+          "format": "byte",
+          "description": "The tenant key's Ed25519 signing public key: unchanged."
+        },
+        "fingerprint": {
+          "type": "string",
+          "description": "The tenant key's fingerprint: unchanged, so a pin survives the rewrap."
+        },
+        "responseSignature": {
+          "type": "string",
+          "format": "byte",
+          "description": "Over the response transcript: label \"rewrap-tenant-key\", request digest transport.RewrapTenantKeyDigest,\nresponse digest transport.TenantKeyResponseDigest(tenant_key, signing_public_key, fingerprint)."
+        }
+      }
+    },
+    "v1SignResponse": {
+      "type": "object",
+      "properties": {
+        "signature": {
+          "type": "string",
+          "format": "byte",
+          "description": "The Ed25519 signature (64 bytes). Shared profile: over the data. Derived profile: over\ntransport.TenantSignedMessage(profile, tenant, data). Wrapped profile: over the data, by the tenant key."
+        },
+        "keyId": {
+          "type": "string",
+          "format": "byte",
+          "description": "The key that signed (16 bytes): a signing key's key_id (PublicKeyResponse.signing_keys) in a shared or\nderived profile, the tenant key's id (the blob's) in a wrapped one."
+        },
+        "responseSignature": {
+          "type": "string",
+          "format": "byte",
+          "description": "Over the response transcript: operation \"sign\", request digest transport.SignDigest(enc, sealed_data, tenant,\ntenant_key), response digest transport.SignResponseDigest(signature, key_id)."
+        }
+      }
+    },
+    "v1SignatureAlgorithm": {
+      "type": "string",
+      "enum": [
+        "SIGNATURE_ALGORITHM_UNSPECIFIED",
+        "SIGNATURE_ALGORITHM_ED25519"
+      ],
+      "default": "SIGNATURE_ALGORITHM_UNSPECIFIED",
+      "description": "SignatureAlgorithm is the algorithm of a signing key or a response key. This protocol implements Ed25519 only; a\nclient keeps a key of another algorithm listed and uses it for nothing (the crypto-agility extension point). A\nsigning key's id binds its algorithm (transport.SigningKeyIDOf), so keys_signature, which covers the id, covers\nthe algorithm.\n\n - SIGNATURE_ALGORITHM_ED25519: Ed25519 (RFC 8032, pure)."
+    },
+    "v1SigningKey": {
+      "type": "object",
+      "properties": {
+        "keyId": {
+          "type": "string",
+          "format": "byte",
+          "description": "transport.SigningKeyID(public_key): 16 bytes, the first half of a SHA-256 of the public key. A client checks\nit; Sign's answer names the key it signed with by it."
+        },
+        "state": {
+          "$ref": "#/definitions/v1SigningKeyState",
+          "description": "ACTIVE, VERIFY_ONLY or REVOKED; keys_signature covers the state's number. A client refuses an answer with any\nother state."
+        },
+        "publicKey": {
+          "type": "string",
+          "format": "byte",
+          "description": "The public key (Ed25519: 32 bytes)."
+        },
+        "algorithm": {
+          "$ref": "#/definitions/v1SignatureAlgorithm",
+          "description": "The key's algorithm (ED25519; never UNSPECIFIED). key_id binds it: the Ed25519 id is SigningKeyID(public_key),\nanother algorithm's names the algorithm too (transport.SigningKeyIDOf)."
+        }
+      },
+      "description": "SigningKey is one version of a profile's signing key."
+    },
+    "v1SigningKeyState": {
+      "type": "string",
+      "enum": [
+        "SIGNING_KEY_STATE_UNSPECIFIED",
+        "SIGNING_KEY_STATE_ACTIVE",
+        "SIGNING_KEY_STATE_VERIFY_ONLY",
+        "SIGNING_KEY_STATE_REVOKED"
+      ],
+      "default": "SIGNING_KEY_STATE_UNSPECIFIED",
+      "description": "SigningKeyState is a signing key version's state.\n\n - SIGNING_KEY_STATE_ACTIVE: The key Sign signs with. Exactly one per profile that has signing keys.\n - SIGNING_KEY_STATE_VERIFY_ONLY: Listed so its signatures keep verifying; Sign does not use it.\n - SIGNING_KEY_STATE_REVOKED: Revoked, for good: listed (its public key stays in the list), never signs, and a client refuses every signature\nunder it. The keyset records it and holds no private key for it any more."
+    },
+    "v1Tenancy": {
+      "type": "string",
+      "enum": [
+        "TENANCY_UNSPECIFIED",
+        "TENANCY_SHARED",
+        "TENANCY_PER_TENANT_WRAPPED",
+        "TENANCY_PER_TENANT_DERIVED"
+      ],
+      "default": "TENANCY_UNSPECIFIED",
+      "description": "Tenancy is a profile's mode, fixed for its life. It is in the fingerprint and in the key-context digest.\n\n - TENANCY_SHARED: One set of keys for every caller (transport.TenancyShared, \"shared\").\n - TENANCY_PER_TENANT_WRAPPED: A key per tenant, made by CreateTenantKey and stored by the application as a tenant key blob\n(transport.TenancyPerTenantWrapped, \"perTenantWrapped\"). The profile has no signing key of its own.\n - TENANCY_PER_TENANT_DERIVED: Every tenant's keys derived from the profile's keys and the tenant id; nothing stored anywhere\n(transport.TenancyPerTenantDerived, \"perTenantDerived\")."
+    }
+  }
+}

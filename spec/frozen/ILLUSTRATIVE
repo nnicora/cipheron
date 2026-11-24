@@ -1,0 +1,6 @@
+# ILLUSTRATIVE: the keysets of the frozen set (manifest.json), made by TestWriteTheFrozenSet
+# (cmd/cipheron/app/keyring) under the published test masters the manifest lists. TEST KEYS ONLY: they open
+# nothing real. Frozen: never edit or regenerate them to make a reader pass.
+ledger.keyset.json
+people.keyset.json
+docs.keyset.json

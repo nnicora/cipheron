@@ -1,0 +1,738 @@
+package cipheron // github.com/nnicora/cipheron
+
+const (
+	TenancyShared = string(transport.TenancyShared)
+
+	TenancyWrapped = string(transport.TenancyPerTenantWrapped)
+
+	TenancyDerived = string(transport.TenancyPerTenantDerived)
+)
+const (
+	SigningKeyActive = string(transport.SigningKeyActive)
+
+	SigningKeyVerifyOnly = string(transport.SigningKeyVerifyOnly)
+
+	SigningKeyRevoked = string(transport.SigningKeyRevoked)
+)
+const (
+	EnvSocket              = client.EnvSocket
+	EnvServerUID           = client.EnvServerUID
+	EnvRequestKey          = client.EnvRequestKey
+	EnvPinsDir             = client.EnvPinsDir
+	EnvEnvironment         = client.EnvEnvironment
+	PinFingerprintSuffix   = client.PinFingerprintSuffix
+	PinContextDigestSuffix = client.PinContextDigestSuffix
+
+	DevelopmentEnvironment = client.DevelopmentEnvironment
+)
+const (
+	OpEncrypt              = transport.OpEncrypt
+	OpDecrypt              = transport.OpDecrypt
+	OpSign                 = transport.OpSign
+	OpReEncrypt            = transport.OpReEncrypt
+	OpExport               = transport.OpExport
+	OpImport               = transport.OpImport
+	OpRetenant             = transport.OpRetenant
+	OpProvision            = transport.OpProvision
+	OpRewrapTenantKey      = transport.OpRewrapTenantKey
+	OpEncryptBatch         = transport.OpEncryptBatch
+	OpDecryptBatch         = transport.OpDecryptBatch
+	OpReEncryptBatch       = transport.OpReEncryptBatch
+	OpRewrapTenantKeyBatch = transport.OpRewrapTenantKeyBatch
+)
+const (
+	SegmentedHeaderLen = transport.SegmentedHeaderLen
+
+	MaxSegmentOverhead = transport.MaxSegmentOverhead
+)
+const AlgorithmEd25519 = uint32(transport.AlgorithmEd25519)
+const JSONFieldPrefix = transport.JSONFieldPrefix
+const RequestIDMetadataKey = transport.RequestIDMetadataKey
+var (
+	ErrPermissionDenied = errors.New("cipheron: permission denied")
+
+	ErrCertificateRefused = client.ErrCertificateRefused
+
+	ErrInvalidInput = errors.New("cipheron: invalid input")
+
+	ErrKeyVersionUnavailable = errors.New("cipheron: the key version is not available")
+
+	ErrTooLarge = client.ErrTooLarge
+
+	ErrUnavailable = errors.New("cipheron: unavailable")
+
+	ErrBusy = kindOf(ErrUnavailable, "busy")
+
+	ErrNoWriter = kindOf(ErrUnavailable, "no master key version writes now")
+
+	ErrProfileSealed = kindOf(ErrUnavailable, "the profile is sealed on this replica")
+
+	ErrUnsupported = errors.New("cipheron: not supported by this cipheron")
+
+	ErrSigningKeyRevoked = client.ErrSigningKeyRevoked
+
+	ErrKeysStale = client.ErrKeysStale
+
+	ErrInternal = errors.New("cipheron: internal error")
+
+	ErrServerIdentity = client.ErrServerIdentity
+
+	ErrServerKeyChanged = client.ErrServerKeyChanged
+
+	ErrBadResponse = client.ErrBadResponse
+
+	ErrTenancy = client.ErrTenancy
+
+	ErrTenantKey = client.ErrTenantKey
+
+	ErrPinRequired = client.ErrPinRequired
+
+	ErrContextDigest = client.ErrContextDigest
+
+	ErrUnknownSigningKey = client.ErrUnknownSigningKey
+
+	ErrClosed = client.ErrClosed
+
+	ErrAssociatedData = client.ErrAssociatedData
+
+	ErrSegmented = transport.ErrSegmented
+
+	ErrKeyStatement = client.ErrKeyStatement
+
+	ErrJSONField = transport.ErrJSONField
+)
+var ObserverKinds = client.ObserverKinds
+func AppendSegment(dst, segment []byte) []byte
+func AppendSegmentedHeader(dst []byte, h SegmentedHeader) ([]byte, error)
+func BatchLimits(err error) (maxItems int, maxBytes int64, ok bool)
+func IsJSONField(value string) bool
+func IsSocketAddress(address string) (bool, error)
+func ReadSegment(r io.Reader, h SegmentedHeader) ([]byte, error)
+func RequestIDOf(err error) string
+func RetryAfter(err error) (time.Duration, bool)
+func Verify(publicKey ed25519.PublicKey, data, signature []byte) bool
+func VerifyTenant(publicKey ed25519.PublicKey, profile, tenant string, data, signature []byte) bool
+func VerifyTenantWithKeys(keys []SigningKey, profile, tenant string, data, signature, keyID []byte) (bool, error)
+func VerifyWithKeys(keys []SigningKey, data, signature, keyID []byte) (bool, error)
+type BatchItem = client.BatchItem
+type BatchResult = client.BatchResult
+type CallOption = client.CallOption
+func WithAssociatedData(aad []byte) CallOption
+func WithSegmentSize(n int) CallOption
+func WithTargetAssociatedData(aad []byte) CallOption
+type CiphertextKey = transport.KeyID
+func JSONFieldKeyID(value string) (CiphertextKey, error)
+func KeyID(ciphertext []byte) (CiphertextKey, error)
+type Client struct {
+	// contains filtered or unexported fields
+}
+func New(address string, opts ...Option) (*Client, error)
+func (c *Client) Close() error
+func (c *Client) ContextDigest(ctx context.Context, profile string) (string, error)
+func (c *Client) CreateTenantKey(ctx context.Context, profile, tenant string) (TenantKey, error)
+func (c *Client) Decrypt(ctx context.Context, profile string, ciphertext []byte, opts ...CallOption) ([]byte, error)
+func (c *Client) DecryptBatch(ctx context.Context, profile string, items []BatchItem) ([]BatchResult, error)
+func (c *Client) DecryptJSONFields(ctx context.Context, profile string, doc []byte, recordID string, pointers []string,
+	opts ...CallOption) ([]byte, error)
+func (c *Client) DecryptObject(ctx context.Context, profile string, object []byte, opts ...CallOption) ([]byte, error)
+func (c *Client) DecryptStream(ctx context.Context, profile string, dst io.Writer, src io.Reader, opts ...CallOption) (int64, error)
+func (c *Client) Encrypt(ctx context.Context, profile string, plaintext []byte, opts ...CallOption) ([]byte, error)
+func (c *Client) EncryptBatch(ctx context.Context, profile string, items []BatchItem) ([]BatchResult, error)
+func (c *Client) EncryptJSONFields(ctx context.Context, profile string, doc []byte, recordID string, pointers []string,
+	opts ...CallOption) ([]byte, error)
+func (c *Client) EncryptObject(ctx context.Context, profile string, plaintext []byte, opts ...CallOption) ([]byte, error)
+func (c *Client) EncryptStream(ctx context.Context, profile string, dst io.Writer, src io.Reader, size int64,
+	opts ...CallOption) (int64, error)
+func (c *Client) KeyStatement(ctx context.Context, profile string) (*KeyStatement, error)
+func (c *Client) Keys(ctx context.Context, profile string) (Keys, error)
+func (c *Client) ReEncrypt(ctx context.Context, profile string, ciphertext []byte, opts ...CallOption) ([]byte, error)
+func (c *Client) ReEncryptAcross(ctx context.Context, from, to Scope, ciphertext []byte, opts ...CallOption) ([]byte, error)
+func (c *Client) ReEncryptBatch(ctx context.Context, profile string, items []BatchItem) ([]BatchResult, error)
+func (c *Client) ReEncryptJSONFields(ctx context.Context, profile string, doc []byte, recordID string, pointers []string,
+	opts ...CallOption) ([]byte, error)
+func (c *Client) ReEncryptObject(ctx context.Context, profile string, object []byte, opts ...CallOption) ([]byte, error)
+func (c *Client) ReEncryptStream(ctx context.Context, profile string, dst io.Writer, src io.Reader, opts ...CallOption) (int64, error)
+func (c *Client) RewrapTenantKey(ctx context.Context, profile, tenant string, blob []byte) (TenantKey, error)
+func (c *Client) RewrapTenantKeyBatch(ctx context.Context, profile string, keys []TenantKeyRef) ([]TenantKeyResult, error)
+func (c *Client) Sign(ctx context.Context, profile string, data []byte) (Signature, error)
+func (c *Client) Tenant(profile, tenant string, blob []byte) *Tenant
+func (c *Client) Verify(ctx context.Context, profile string, data, signature, keyID []byte) (bool, error)
+type KeyStatement = client.KeyStatement
+func ImportKeyStatement(exported []byte, profile, fingerprint string, maxAge time.Duration) (*KeyStatement, error)
+func ImportKeyStatementAnyAge(exported []byte, profile, fingerprint string) (*KeyStatement, error)
+type Keys struct {
+	Profile string
+
+	Tenancy string
+
+	HPKE []byte
+
+	Response ed25519.PublicKey
+
+	SigningKeys []SigningKey
+
+	ContextDigest string
+
+	Fingerprint string
+
+	HPKESuite string
+
+	FingerprintVersion int
+}
+func (k Keys) Active() (SigningKey, bool)
+func (k Keys) SigningKey(keyID []byte) (SigningKey, bool)
+type Operation = transport.Operation
+type Option func(*options)
+func WithAnyServer() Option
+func WithConnections(n int) Option
+func WithContextDigestPin(profile string, digests ...string) Option
+func WithEnvironment() Option
+func WithKeysMaxAge(d time.Duration) Option
+func WithMaxMessageBytes(n int) Option
+func WithObserver(f func(profile, kind string)) Option
+func WithPinsDir(dir string) Option
+func WithProfileFingerprint(profile, fp string) Option
+func WithRequestKey(key ed25519.PrivateKey) Option
+func WithRequestKeyFile(path string) Option
+func WithRequiredPins() Option
+func WithRetry(p RetryPolicy) Option
+func WithRoundRobin() Option
+func WithServerSPIFFEID(id string) Option
+func WithServerUID(uid uint32) Option
+func WithTLSConfig(cfg *tls.Config) Option
+func WithTLSFiles(certFile, keyFile, caFile string) Option
+func WithTenantFingerprint(profile, tenant, fp string) Option
+func WithTransport(t Transport) Option
+func WithWriterVersionPin(profile string, versions ...string) Option
+type RetryPolicy = client.RetryPolicy
+type Scope = client.ReEncryptAcrossScope
+type SegmentedHeader = transport.SegmentedHeader
+func ReadSegmentedHeader(r io.Reader) (SegmentedHeader, error)
+type Signature = client.Signature
+type SigningKey struct {
+	KeyID []byte
+
+	State string
+
+	PublicKey ed25519.PublicKey
+
+	Algorithm uint32
+}
+type Tenant struct {
+	// contains filtered or unexported fields
+}
+func (t *Tenant) Decrypt(ctx context.Context, ciphertext []byte, opts ...CallOption) ([]byte, error)
+func (t *Tenant) DecryptBatch(ctx context.Context, items []BatchItem) ([]BatchResult, error)
+func (t *Tenant) DecryptJSONFields(ctx context.Context, doc []byte, recordID string, pointers []string,
+	opts ...CallOption) ([]byte, error)
+func (t *Tenant) DecryptObject(ctx context.Context, object []byte, opts ...CallOption) ([]byte, error)
+func (t *Tenant) DecryptStream(ctx context.Context, dst io.Writer, src io.Reader, opts ...CallOption) (int64, error)
+func (t *Tenant) Encrypt(ctx context.Context, plaintext []byte, opts ...CallOption) ([]byte, error)
+func (t *Tenant) EncryptBatch(ctx context.Context, items []BatchItem) ([]BatchResult, error)
+func (t *Tenant) EncryptJSONFields(ctx context.Context, doc []byte, recordID string, pointers []string,
+	opts ...CallOption) ([]byte, error)
+func (t *Tenant) EncryptObject(ctx context.Context, plaintext []byte, opts ...CallOption) ([]byte, error)
+func (t *Tenant) EncryptStream(ctx context.Context, dst io.Writer, src io.Reader, size int64, opts ...CallOption) (int64, error)
+func (t *Tenant) Fingerprint() (string, error)
+func (t *Tenant) ReEncrypt(ctx context.Context, ciphertext, to []byte, opts ...CallOption) ([]byte, error)
+func (t *Tenant) ReEncryptBatch(ctx context.Context, items []BatchItem, to []byte) ([]BatchResult, error)
+func (t *Tenant) ReEncryptJSONFields(ctx context.Context, doc []byte, recordID string, pointers []string, to []byte,
+	opts ...CallOption) ([]byte, error)
+func (t *Tenant) ReEncryptObject(ctx context.Context, object, to []byte, opts ...CallOption) ([]byte, error)
+func (t *Tenant) ReEncryptStream(ctx context.Context, dst io.Writer, src io.Reader, to []byte, opts ...CallOption) (int64, error)
+func (t *Tenant) Sign(ctx context.Context, data []byte) (Signature, error)
+func (t *Tenant) Verify(ctx context.Context, data, signature, keyID []byte) (bool, error)
+type TenantKey struct {
+	Blob []byte
+
+	KeyID []byte
+
+	SigningPublicKey ed25519.PublicKey
+
+	Fingerprint string
+}
+type TenantKeyEvidence = client.TenantKeyEvidence
+func ReadTenantKeyEvidence(blob []byte) (*TenantKeyEvidence, error)
+type TenantKeyInfo = client.TenantKeyInfo
+func ReadTenantKey(blob []byte) (*TenantKeyInfo, error)
+type TenantKeyRef = client.TenantKeyRef
+type TenantKeyResult struct {
+	Key TenantKey
+	Err error
+}
+type Transport int
+const (
+	TransportGRPC Transport = iota + 1
+
+	TransportHTTP
+)
+func (t Transport) String() string
+
+package cipherontest // github.com/nnicora/cipheron/cipherontest
+
+const (
+	DefaultBatchMaxItems = transport.DefaultBatchMaxItems
+	DefaultBatchMaxBytes = transport.DefaultBatchMaxBytes
+)
+const (
+	UnknownAlgorithm uint32 = 77
+	UnknownSuite            = "0x0647/0x0001/0x0002"
+)
+const (
+	UnknownTenancyNumber = 9
+	UnknownFormat        = 9
+	UnknownBlobVersion   = transport.TenantKeyVersion + 1
+)
+const (
+	BusyMessage     = "cipheron is busy: too many requests in flight; retry later"
+	NoWriterMessage = "no master key version writes now"
+	InternalMessage = "internal error"
+)
+const BusyRetryDelay = time.Second
+const KeyVersionUnavailable = "the key version of this ciphertext is not available"
+const MaxMessageBytes = 96 << 20
+const ProfileSealedRetryDelay = 5 * time.Second
+const UnknownStateNumber = 4
+func ClientTLS(tb testing.TB, ca *CA, id string, roots *x509.CertPool) *tls.Config
+func RequestKey(tb testing.TB, dir, name string) (ed25519.PrivateKey, string)
+func SocketDir(tb testing.TB) string
+func Write(tb testing.TB, dir, name string, data []byte, mode os.FileMode) string
+type CA struct {
+	Cert *x509.Certificate
+	Key  *ecdsa.PrivateKey
+
+	PEM []byte
+
+	Pool *x509.CertPool
+}
+func NewCA(tb testing.TB, name string) *CA
+func (ca *CA) Client(tb testing.TB, id string) *Leaf
+func (ca *CA) Server(tb testing.TB, id string) *Leaf
+func (ca *CA) ServerFor(tb testing.TB, dns string) *Leaf
+type Fault int
+const (
+	NoFault Fault = iota
+
+	Busy
+
+	NoWriter
+
+	Internal
+
+	Unimplemented
+
+	Overloaded
+
+	ProfileSealed
+)
+type Leaf struct {
+	Cert *x509.Certificate
+
+	ChainPEM []byte
+
+	KeyPEM []byte
+}
+type Mode int
+const (
+	Honest Mode = iota
+
+	JunkCiphertext
+
+	GarbledPlaintext
+
+	ForeignResponseSignature
+
+	NoResponseSignature
+
+	ShortSignature
+
+	ForeignSignature
+
+	UnknownKeyID
+
+	OtherListedKeyID
+
+	OtherTenantBlob
+
+	OtherKeyIDCiphertext
+
+	WrongFormatCiphertext
+
+	ForgedKeysSignature
+
+	KeysForOtherProfile
+
+	KeysForOtherContext
+
+	KeysOfAnotherIdentity
+
+	UnsignedExtraKey
+
+	ForgetVerifyOnlyKeys
+
+	RewrapOtherKeyID
+
+	RewrapOtherSigningKey
+
+	RewrapOtherFingerprint
+
+	RewrapOtherCreated
+
+	LongCiphertext
+
+	UnknownTenancy
+
+	UnknownFormatCiphertext
+
+	UnknownVersionBlob
+
+	SignRevoked
+
+	ForgedKeyStatement
+
+	MismatchedKeyStatement
+
+	NoHPKESuite
+
+	AdditionalIdentityKey
+
+	UnknownHPKESuite
+
+	UnknownSigningAlgorithm
+
+	NoSecondSignature
+
+	ShortBatch
+
+	BatchResultDropped
+
+	AnswerOtherContext
+
+	AssociatedDataDropped
+
+	UnknownSigningKeyState
+
+	ReplayedKeys
+
+	AnsweredOtherSigningKey
+)
+type ProfileKeys struct {
+	Tenancy string
+
+	HPKE     []byte
+	Response ed25519.PublicKey
+
+	ContextDigest string
+
+	SigningKeys []ProfileSigningKey
+}
+type ProfileSigningKey struct {
+	KeyID     []byte
+	State     string
+	PublicKey ed25519.PublicKey
+}
+type Server struct {
+	cipheronv1.UnimplementedCipherServiceServer
+	// contains filtered or unexported fields
+}
+func New(tb testing.TB, profiles ...string) *Server
+func (s *Server) ActivateSigning(profile string, keyID []byte)
+func (s *Server) ActiveKeyID(profile string) []byte
+func (s *Server) AddSigningKey(profile string) []byte
+func (s *Server) Auth() (verified, absent, refused int64)
+func (s *Server) AuthIgnored() int64
+func (s *Server) BatchCalls() int64
+func (s *Server) BatchRefusals() int64
+func (s *Server) ContextDigest(profile string) string
+func (s *Server) CreateTenantKey(_ context.Context, r *cipheronv1.CreateTenantKeyRequest) (*cipheronv1.CreateTenantKeyResponse, error)
+func (s *Server) Decrypt(_ context.Context, r *cipheronv1.DecryptRequest) (*cipheronv1.DecryptResponse, error)
+func (s *Server) DecryptBatch(_ context.Context, r *cipheronv1.DecryptBatchRequest) (*cipheronv1.DecryptBatchResponse, error)
+func (s *Server) Encrypt(ctx context.Context, r *cipheronv1.EncryptRequest) (*cipheronv1.EncryptResponse, error)
+func (s *Server) EncryptBatch(_ context.Context, r *cipheronv1.EncryptBatchRequest) (*cipheronv1.EncryptBatchResponse, error)
+func (s *Server) EncryptsPerConnection() map[int64]int
+func (s *Server) Fail(f Fault)
+func (s *Server) FailPublicKey(f Fault)
+func (s *Server) Fingerprint(profile string) string
+func (s *Server) Grant(profile string, ops ...transport.Operation)
+func (s *Server) HTTPHandler(tb testing.TB) http.Handler
+func (s *Server) HTTPHandlerMax(tb testing.TB, maxRequestBytes int64) http.Handler
+func (s *Server) HoldPublicKey() (release func())
+func (s *Server) ListVersion(profile, version string)
+func (s *Server) MakeDerived(profile string)
+func (s *Server) MakePerTenant(profile string)
+func (s *Server) MarkSigningKeyUnknown(profile string, keyID []byte, code uint32)
+func (s *Server) NewTenantKey(profile, tenant string) []byte
+func (s *Server) ProfileKeys(profile string) ProfileKeys
+func (s *Server) PublicKey(ctx context.Context, r *cipheronv1.PublicKeyRequest) (*cipheronv1.PublicKeyResponse, error)
+func (s *Server) PublicKeyCalls() int64
+func (s *Server) ReEncrypt(_ context.Context, r *cipheronv1.ReEncryptRequest) (*cipheronv1.ReEncryptResponse, error)
+func (s *Server) ReEncryptBatch(_ context.Context, r *cipheronv1.ReEncryptBatchRequest) (*cipheronv1.ReEncryptBatchResponse, error)
+func (s *Server) Rekey(profile string)
+func (s *Server) RequireRequestKey(profile string, pub ed25519.PublicKey)
+func (s *Server) Restart(start time.Time)
+func (s *Server) RetireVersion(profile, version string)
+func (s *Server) RevokeSigning(profile string, keyID []byte)
+func (s *Server) RewrapTenantKey(_ context.Context, r *cipheronv1.RewrapTenantKeyRequest) (*cipheronv1.RewrapTenantKeyResponse, error)
+func (s *Server) RewrapTenantKeyBatch(ctx context.Context, r *cipheronv1.RewrapTenantKeyBatchRequest) (*cipheronv1.RewrapTenantKeyBatchResponse, error)
+func (s *Server) RotateSigning(profile string) []byte
+func (s *Server) ServeHTTPSocket(tb testing.TB) string
+func (s *Server) ServeSocket(tb testing.TB) string
+func (s *Server) ServeSocketMax(tb testing.TB, maxRequestBytes int) string
+func (s *Server) ServeTLS(tb testing.TB, leaf *Leaf, clientCA *CA) string
+func (s *Server) ServeTLSConfig(tb testing.TB, leaf *Leaf, clientCA *CA, configure func(*tls.Config)) string
+func (s *Server) SetBatchMaxBytes(n int64)
+func (s *Server) SetBatchMaxItems(n int)
+func (s *Server) SetMode(m Mode)
+func (s *Server) SetWriteVersion(profile, version string)
+func (s *Server) Sign(_ context.Context, r *cipheronv1.SignRequest) (*cipheronv1.SignResponse, error)
+func (s *Server) SignSigningKeyUnknown(profile string, keyID []byte, code uint32)
+func (s *Server) SocketPath() string
+func (s *Server) UnrevokeSigning(profile string, keyID []byte)
+
+package conformance // github.com/nnicora/cipheron/conformance
+
+const (
+	VectorsFile = "vectors/cipheron-conformance-v1.json"
+	SchemaFile  = "vectors/vectors.schema.json"
+)
+const (
+	KindDigest                = "digest"
+	KindRequestTranscript     = "requestTranscript"
+	KindRequestSignature      = "requestSignature"
+	KindRequestSealInfo       = "requestSealInfo"
+	KindResponseSealInfo      = "responseSealInfo"
+	KindResponseTranscript    = "responseTranscript"
+	KindResponseSignature     = "responseSignature"
+	KindSigningKeysTranscript = "signingKeysTranscript"
+	KindFingerprint           = "fingerprint"
+	KindKeyStatement          = "keyStatement"
+	KindCiphertextKeyID       = "ciphertextKeyID"
+
+	KindSigningKeyID            = "signingKeyID"
+	KindSegmentAssociatedData   = "segmentAssociatedData"
+	KindJSONFieldAssociatedData = "jsonFieldAssociatedData"
+
+	KindReEncryptAssociatedData = "reEncryptAssociatedData"
+
+	KindTenantKey           = "tenantKey"
+	KindTenantFingerprint   = "tenantFingerprint"
+	KindTenantSignedMessage = "tenantSignedMessage"
+	KindTenantID            = "tenantId"
+	KindErrorClass          = "errorClass"
+)
+const SchemaID = "cipheron-conformance/v1"
+var ErrUnsupported = errors.New("conformance: kind not supported by this implementation")
+func Kinds() []string
+func MandatoryKinds() []string
+func RefusableKinds() []string
+func Schema() []byte
+func Vectors() []byte
+type AssociatedDataOutput struct {
+	AssociatedData Hex `json:"associatedData"`
+}
+type Case struct {
+	ID     string          `json:"id"`
+	Kind   string          `json:"kind"`
+	Note   string          `json:"note,omitempty"`
+	Input  json.RawMessage `json:"input"`
+	Output json.RawMessage `json:"output"`
+}
+type CiphertextKeyIDInput struct {
+	Ciphertext Hex `json:"ciphertext"`
+}
+type CiphertextKeyIDOutput struct {
+	KeyID string `json:"keyId"`
+}
+type DigestInput struct {
+	Fields []Hex `json:"fields"`
+}
+type DigestOutput struct {
+	Digest Hex `json:"digest"`
+}
+type ErrorClassInput struct {
+	Code         string          `json:"code"`
+	ErrorInfo    *ErrorInfoInput `json:"errorInfo,omitempty"`
+	RetryDelayMS *int64          `json:"retryDelayMs,omitempty"`
+}
+type ErrorClassOutput struct {
+	Class     string `json:"class"`
+	Retry     string `json:"retry"`
+	MinWaitMS int64  `json:"minWaitMs"`
+}
+type ErrorInfoInput struct {
+	Domain string `json:"domain"`
+	Reason string `json:"reason"`
+}
+type Failure struct {
+	ID, Kind, Note string
+	Want           json.RawMessage
+	Got            json.RawMessage
+	Err            string
+}
+type FingerprintInput struct {
+	Profile           string             `json:"profile"`
+	Tenancy           string             `json:"tenancy"`
+	HPKESuite         HPKESuiteInput     `json:"hpkeSuite"`
+	HPKEPublicKey     Hex                `json:"hpkePublicKey"`
+	ResponseAlgorithm uint32             `json:"responseAlgorithm"`
+	ResponsePublicKey Hex                `json:"responsePublicKey"`
+	Additional        []IdentityKeyInput `json:"additional,omitempty"`
+}
+type FingerprintOutput struct {
+	Fingerprint string `json:"fingerprint"`
+}
+type HPKESuiteInput struct {
+	KEM  uint16 `json:"kem"`
+	KDF  uint16 `json:"kdf"`
+	AEAD uint16 `json:"aead"`
+}
+type Hex []byte
+func (h Hex) MarshalJSON() ([]byte, error)
+func (h *Hex) UnmarshalJSON(b []byte) error
+type IdentityKeyInput struct {
+	Role      uint32         `json:"role"`
+	Suite     HPKESuiteInput `json:"suite"`
+	Algorithm uint32         `json:"algorithm"`
+	PublicKey Hex            `json:"publicKey"`
+}
+type Implementation interface {
+	Evaluate(ctx context.Context, kind string, input json.RawMessage) (json.RawMessage, error)
+}
+func Reference() Implementation
+type InfoOutput struct {
+	Info Hex `json:"info"`
+}
+type JSONFieldAssociatedDataInput struct {
+	RecordID       string `json:"recordId"`
+	Pointer        string `json:"pointer"`
+	AssociatedData Hex    `json:"associatedData"`
+}
+type KeyIDOutput struct {
+	KeyID Hex `json:"keyId"`
+}
+type KeyStatementInput struct {
+	Statement   Hex    `json:"statement"`
+	Signature   Hex    `json:"signature"`
+	Profile     string `json:"profile"`
+	Fingerprint string `json:"fingerprint"`
+}
+type KindReport struct{ Passed, Failed, Unsupported int }
+type MessageOutput struct {
+	Message Hex `json:"message"`
+}
+type Process struct {
+	// contains filtered or unexported fields
+}
+func Exec(ctx context.Context, stderr io.Writer, argv ...string) (*Process, error)
+func (p *Process) Close() error
+func (p *Process) Evaluate(ctx context.Context, kind string, input json.RawMessage) (json.RawMessage, error)
+type ReEncryptAssociatedDataInput struct {
+	AssociatedData   Hex `json:"associatedData"`
+	ToAssociatedData Hex `json:"toAssociatedData"`
+}
+type RefusedOutput struct {
+	Refused bool `json:"refused"`
+}
+type Report struct {
+	Passed, Failed, Unsupported int
+	ByKind                      map[string]*KindReport
+	Failures                    []Failure
+}
+func Run(ctx context.Context, impl Implementation, s *Suite) (*Report, error)
+func (r *Report) OK() bool
+func (r *Report) String() string
+type RequestSealInfoInput struct {
+	Profile          string `json:"profile"`
+	Operation        string `json:"operation"`
+	Tenant           string `json:"tenant"`
+	RequestPublicKey Hex    `json:"requestPublicKey"`
+}
+type RequestTranscriptInput struct {
+	Profile     string `json:"profile"`
+	Operation   string `json:"operation"`
+	TimestampMS int64  `json:"timestampMs"`
+	Nonce       Hex    `json:"nonce"`
+	Digest      Hex    `json:"digest"`
+}
+type ResponseSealInfoInput struct {
+	Profile   string `json:"profile"`
+	Operation string `json:"operation"`
+	Tenant    string `json:"tenant"`
+}
+type ResponseTranscriptInput struct {
+	Profile          string `json:"profile"`
+	ContextDigest    string `json:"contextDigest"`
+	Operation        string `json:"operation"`
+	RequestNonce     Hex    `json:"requestNonce"`
+	RequestSignature Hex    `json:"requestSignature"`
+	RequestDigest    Hex    `json:"requestDigest"`
+	ResponseDigest   Hex    `json:"responseDigest"`
+}
+type SegmentAssociatedDataInput struct {
+	ObjectID       Hex    `json:"objectId"`
+	Index          uint32 `json:"index"`
+	Final          bool   `json:"final"`
+	AssociatedData Hex    `json:"associatedData"`
+}
+type SignatureInput struct {
+	PublicKey  Hex `json:"publicKey"`
+	Transcript Hex `json:"transcript"`
+	Signature  Hex `json:"signature"`
+}
+type SigningKeyIDInput struct {
+	Algorithm uint32 `json:"algorithm"`
+	PublicKey Hex    `json:"publicKey"`
+}
+type SigningKeyInput struct {
+	KeyID     Hex    `json:"keyId"`
+	State     string `json:"state"`
+	PublicKey Hex    `json:"publicKey"`
+}
+type SigningKeysTranscriptInput struct {
+	Profile       string            `json:"profile"`
+	Tenancy       string            `json:"tenancy"`
+	ContextDigest string            `json:"contextDigest"`
+	Nonce         Hex               `json:"nonce"`
+	Keys          []SigningKeyInput `json:"keys"`
+}
+type Suite struct {
+	Schema            string `json:"schema"`
+	Comment           string `json:"comment"`
+	TranscriptVersion uint32 `json:"transcriptVersion"`
+	Cases             []Case `json:"cases"`
+}
+func Load() (*Suite, error)
+func Parse(b []byte) (*Suite, error)
+type TenantFingerprintInput struct {
+	Profile          string `json:"profile"`
+	Tenant           string `json:"tenant"`
+	KeyID            Hex    `json:"keyId"`
+	SigningPublicKey Hex    `json:"signingPublicKey"`
+}
+type TenantIDInput struct {
+	Tenant string `json:"tenant"`
+}
+type TenantKeyInput struct {
+	Blob    Hex    `json:"blob"`
+	Profile string `json:"profile"`
+	Tenant  string `json:"tenant"`
+}
+type TenantKeyOutput struct {
+	KeyID            Hex    `json:"keyId"`
+	SigningPublicKey Hex    `json:"signingPublicKey"`
+	WrappingVersion  string `json:"wrappingVersion"`
+	Created          int64  `json:"created"`
+	Fingerprint      string `json:"fingerprint"`
+}
+type TenantSignedMessageInput struct {
+	Profile string `json:"profile"`
+	Tenant  string `json:"tenant"`
+	Data    Hex    `json:"data"`
+}
+type TranscriptOutput struct {
+	Transcript Hex `json:"transcript"`
+}
+type ValidOutput struct {
+	Valid bool `json:"valid"`
+}
+

@@ -1,0 +1,38 @@
+{
+  "version": 1,
+  "kind": "shared",
+  "profile": "ledger",
+  "created": "2026-11-17T09:00:00Z",
+  "hpkePublicKey": "BPmDQkqCU3z8Qw5RSdZAL0Aq/y9sKzheSxhFejR86yrmk5RU4Yty38V/45sn8NTDQimiyOkqpcnOX4VKDAAsK+E=",
+  "responsePublicKey": "pkiIFPepdP5mvuMuctbQsIQDAr3kb61OmuQWpPOrpP8=",
+  "signingKeys": [
+    {
+      "keyId": "BN9jD9fWNrWQjs258Q7qKg==",
+      "state": "revoked",
+      "publicKey": "VIKIWRF2Kj/8r3Fhu/mELQfzqPrTCj8ycvQHDLxZAFk="
+    },
+    {
+      "keyId": "5rlhnb22FqDsB9X2pdWn9A==",
+      "state": "active",
+      "publicKey": "vxeIStW/jRObjNBc8ThMg4BAgCOu8dpmT+3wMYoRqJI="
+    },
+    {
+      "keyId": "uG99Zslwx8Pzzj5RdoDGxA==",
+      "state": "verifyOnly",
+      "publicKey": "/bguI/ckc+yZ+UAt1M2CO9VchtQ1/Omls8FNOdXaFpY="
+    }
+  ],
+  "wrappingVersion": "v2",
+  "masterVersions": [
+    {
+      "id": "v1",
+      "kcv": "IO9d9wNDCe0jfvPNBoJHkw=="
+    },
+    {
+      "id": "v2",
+      "kcv": "AXD3m8KKH1qVB8z9fd9XSQ=="
+    }
+  ],
+  "fingerprint": "sha256:4c9fb0bac551ed34983beb846c7af6409c36600243e7c9fa84977f9e05420804",
+  "wrapped": "UZmYWqyJzyHm8HK1MN5Ue8apmW5K88L/J4Gduuqibln9ARpIUCYOGhzcY5fKk/NYXaQCz44Pn96E7fecEkACAvl9vx24B5WHF0tA3c4/xPZvswGbY83+2tiAzVEz1D8hbFVrIPCr7c+oHbZYXGA5+Q4niTPbSyJQEmWw8zHBkr5YfglBj+ziv/1z6O0kMjnSSLuxaBNrjiZlVj0cNm1Xx1pYc06kik0PQ85ianuB1MxNPsRTKzaaNVQku6PW5TMxuBuPbLdoLNb5xeLYuLa+zLQHLOyQs4a/eyFPEXl9fvfFaQZRAnLNnvrmsb/QmhbP7rfzwziC7r6MeFxSkwozhzve4N+OENZJUQ6imA=="
+}

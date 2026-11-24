@@ -1,0 +1,21 @@
+{
+  "version": 1,
+  "kind": "perTenantWrapped",
+  "profile": "docs",
+  "created": "2026-11-17T09:00:00Z",
+  "hpkePublicKey": "BNdX2WNmZDOZGebPbr+8Qkad9YvZ/1f9cgVzWPwBQ4DTSFcE5oq910E1igx9CPG06MKXhNa4UbSQ+CSrmgf+cmM=",
+  "responsePublicKey": "6zAopzXSe5dsUmikhCrH2NSbpxbSxJYQnhFqv74h8Nw=",
+  "wrappingVersion": "v1",
+  "masterVersions": [
+    {
+      "id": "v1",
+      "kcv": "kntMddCtmvnOlUDCzDpnIw=="
+    },
+    {
+      "id": "v2",
+      "kcv": "Oj7gSYyhPAC0CdI1Tl30Ug=="
+    }
+  ],
+  "fingerprint": "sha256:132f58e9f0ce70db037c3f1336393ac9b3abf7becd58afe2336d95d669cd0043",
+  "wrapped": "wRqM7qCTmQ5y1JuAvZjyJYoMIVqvkCnbW+otB7KvufGNEyIphOryVos08Wko6QMhLwjOPGIXNhFMwofQBOiVKttGQUJxMJQX7e3az4MsW7BEJw3JSeeYqxnNb2ZyQtn8PW4W7r7VodtqCh0j1vh987CFECwsPtPo3SsHPM30YusCBFG0"
+}

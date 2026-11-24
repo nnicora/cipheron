@@ -1,0 +1,709 @@
+syntax = "proto3";
+
+package cipheron.v1;
+
+import "google/api/annotations.proto";
+
+option go_package = "github.com/nnicora/cipheron/proto/v1;cipheronv1";
+
+// HOW THIS FILE CHANGES. cipheron and its clients speak ONE protocol version, built together from this file: a field,
+// an enum value or an RPC is added, changed or removed in place — no `reserved` line, no compatibility field, no
+// version negotiation — and `make proto-gen` regenerates the Go code and the OpenAPI document. Enums keep 0 as the
+// UNSPECIFIED value, which is never a valid answer. cipheron refuses a request that carries a field it does not have;
+// a client never reads a field of an answer it does not have. The package, cipheron.v1, is the API's version: a new
+// API version is a new proto package.
+//
+// THE TRANSCRIPT VERSION. Everything cipheron and its clients sign or seal (transport: RequestTranscript,
+// ResponseTranscript, SigningKeysTranscript, RequestSealInfo, ResponseInfoTenant) binds the transcript version at a
+// fixed position, so nothing signed or sealed under one version's layouts is ever taken for another's. It is a
+// versioned kind of the release's policy (wire/format): a signer binds the version the policy writes
+// (transport.WrittenTranscriptVersion, 1), and a verifier rebuilds the transcript under each version the policy
+// reads, the written one first. It is not negotiated and travels in no message.
+
+// CipherService is cipheron's API: per-profile encryption, decryption, re-encryption and signing, served on a unix
+// socket (a sidecar), on a mutual-TLS network port (a service), or both — gRPC on HTTP/2, and this JSON API on
+// HTTP/1.1. The byte layouts and transcripts named below are defined in wire/transport.
+//
+// SIGNATURES ARE VERIFIED WITHOUT CIPHERON. Sign makes an Ed25519 signature (RFC 8032, pure); anyone holding the
+// public key named by the answer's key_id (PublicKey's signing_keys, or a tenant key's) verifies it with any
+// Ed25519 implementation, so cipheron has no Verify operation. In a perTenant derived profile the signature is over
+// the tenant-bound message (transport.TenantSignedMessage), not the data alone.
+//
+// WHO MAY CALL, AND FOR WHAT. Every request is authorized by the identity of the connection it arrived on —
+// on the socket the kernel's uid and gid of the peer, on the network the one SPIFFE ID of its verified client
+// certificate — against the profile's caller entries, each of which lists the operations it may use: encrypt,
+// decrypt, sign, reencrypt (ReEncrypt), provision (CreateTenantKey and RewrapTenantKey), and export, import and
+// retenant (a cross-profile ReEncrypt: ReEncryptRequest.to_profile). PublicKey is answered
+// to any caller the profile lists. A caller entry may also hold request keys (one or two, so a caller can roll its
+// key): then every request but PublicKey must carry `auth`, an Ed25519 signature by one of them over the request
+// (RequestAuth), fresh and never seen before by the process. A network caller always has one, so an intermediary that
+// terminates TLS and holds the caller's network identity can neither forge nor redirect a request, and can replay one
+// at most once to each process alive at its timestamp, within maxSkew. An unknown
+// profile, a caller the profile does not list for the operation and a request whose auth does not verify get the
+// same answer: PERMISSION_DENIED (HTTP 403). No operation activates, retires or rotates a key: that exists only
+// in configuration and the keyset file.
+//
+// NOTHING SECRET TRAVELS IN THE CLEAR. Plaintext and data to sign travel sealed with HPKE (RFC 9180,
+// DHKEM(P-256, HKDF-SHA256), HKDF-SHA256, AES-256-GCM) to the profile's HPKE public key, and a decrypted
+// plaintext travels back sealed to a one-time public key the client sends with the request. The HPKE info
+// string binds every seal to its profile, operation, tenant and the transcript version, and a request's seal also
+// to the requester: it ends with the SHA-256 of the caller's request public key (empty for an entry without
+// request keys), so a sealed payload copied into another caller's request does not open. ReEncrypt
+// and RewrapTenantKey carry no plaintext at all: the plaintext and the tenant's keys never leave cipheron.
+//
+// CIPHERON'S ANSWERS ARE AUTHENTICATED. Every answer but PublicKey's carries `response_signature`, an Ed25519
+// signature by the profile's response key over the response transcript (transport.ResponseTranscript): the
+// profile, the key-context digest of the cipheron that answered (PublicKeyResponse.context_digest; the answer does
+// not carry it: the client supplies the digests it accepts), the operation's transcript label, the request's nonce,
+// the SHA-256 of the request's auth.signature (empty when it carried none), the digest of the request's payload
+// fields and the digest of the answer's. A PublicKey answer's signing-key list is signed by the same key
+// (keys_signature). A client that pinned the profile's identity (its fingerprint) therefore detects any party that is
+// not cipheron, on the socket path or on the network, accepts an answer only to the request it sent itself — not to
+// another caller's request made under its nonce — and, pinning the key context, only from a cipheron on that
+// context.
+//
+// KEYS AND ROTATION. A profile's identity keys (the HPKE key and the response key) are generated once and never
+// rotate; the fingerprint covers them, so pins survive every rotation. Signing keys are versioned: one is active,
+// the others verify only, and every key ever used stays listed. Data keys are derived per master key version —
+// master versions listed in configuration; rotation is the operator adding one — and every ciphertext names the
+// version it was made under (format 4), so every earlier ciphertext stays decryptable while its master version is
+// listed.
+//
+// TENANCY. A profile is shared (the default), perTenant wrapped or perTenant derived. Wrapped: every tenant has a
+// key of its own — a storage key and an Ed25519 signing key — made by CreateTenantKey and returned as a tenant key
+// blob, wrapped under the profile's tenant-wrapping key, which the application stores with its tenant record
+// (cipheron keeps no state); requests carry the tenant and its blob; deleting a blob erases the tenant.
+// Derived: nothing is stored — every tenant's keys are derived from the profile's keys and the tenant id;
+// requests carry the tenant only. cipheron's configuration names no tenant: which caller may act for which tenant,
+// and when a tenant is no longer served, is the application's decision (a wrapped tenant is erased by deleting its
+// blob).
+//
+// BUSY. A request cipheron cannot serve for lack of capacity — no locked memory could be had for its tenant key,
+// a limit reached — is RESOURCE_EXHAUSTED (HTTP 429) with a RetryInfo, never INTERNAL: retry later.
+//
+// REFUSAL REASONS. The refusals a client acts on carry a google.rpc.ErrorInfo status detail {reason, profile
+// "cipheron.v1"} — on gRPC, and in the HTTP gateway's JSON status body ("details") — and a client decides on the
+// reason, never on the message (wire/transport: ErrorDomain, Reason*). A refusal is never signed: it
+// carries no response_signature.
+//   - CIPHERON_KEY_VERSION_UNAVAILABLE: INVALID_ARGUMENT (HTTP 400) — the ciphertext, or tenant key blob, was made
+//     under a master version the configuration does not list; not corruption: listed again, it reads again;
+//   - CIPHERON_BUSY: RESOURCE_EXHAUSTED (HTTP 429), with the RetryInfo;
+//   - CIPHERON_ASSOCIATED_DATA: INVALID_ARGUMENT (HTTP 400) — a ciphertext made with associated data (format 5 or
+//     6) sent without any, or one made without (format 3 or 4) sent with some; or a re-encryption with
+//     associated_data and no to_associated_data (a re-binding to other associated data by an entry not granted
+//     decrypt and encrypt is PERMISSION_DENIED). Wrong associated data is not this reason: it fails the ciphertext's
+//     tag, "could not be decrypted", as any modification does;
+//   - CIPHERON_BATCH_LIMIT: INVALID_ARGUMENT (HTTP 400) — a batch with more items, or more payload bytes, than the
+//     configuration allows (batch.maxItems, batch.maxBytes); the ErrorInfo metadata names both limits ("maxItems",
+//     "maxBytes"), so the client can split the batch;
+//   - CIPHERON_NO_WRITER: UNAVAILABLE (HTTP 503) — no master version writes at this cipheron's clock; reads still
+//     work;
+//   - CIPHERON_AUDIT_UNAVAILABLE: UNAVAILABLE (HTTP 503), with a RetryInfo — the audit trail could not record the
+//     request; nothing was done;
+//   - CIPHERON_PROFILE_SEALED: UNAVAILABLE (HTTP 503), with a RetryInfo — the profile is sealed on this replica (given
+//     only to a caller the profile lists);
+//   - CIPHERON_STARTING: UNAVAILABLE (HTTP 503), with a RetryInfo — the request is signed before the answering
+//     process started; nothing was done or recorded: sign it again and send it once more (safe for every operation).
+//
+// BATCHES. EncryptBatch, DecryptBatch, ReEncryptBatch and RewrapTenantKeyBatch are the single operations over a
+// list of items, authorized as the single operation (encrypt, decrypt, reencrypt, provision), with one nonce, one
+// auth and one response signature for the whole batch, under their own transcript labels (encrypt-batch,
+// decrypt-batch, reencrypt-batch, rewrap-tenant-key-batch). Each item has its own result: the answer, or an
+// ItemError when that item failed for its own reason (it does not decrypt, its key version is not listed, its
+// associated data, its tenant). A failure of the whole request (authorization, limits, busy) is the RPC's answer.
+// The data batches have one scope — the profile, and one tenant with its blob(s) — for every item;
+// RewrapTenantKeyBatch's items each name their tenant and blob.
+service CipherService {
+  // PublicKey returns the profile's identity keys, its tenancy, its signing keys (signed by the response key) and
+  // its key-context digest. It is answered to any caller the profile lists, without auth.
+  rpc PublicKey(PublicKeyRequest) returns (PublicKeyResponse) {
+    option (google.api.http) = {
+      post: "/v1/cipher/{profile}/public-key"
+      body: "*"
+    };
+  }
+
+  // Encrypt opens a plaintext sealed to the profile's HPKE key and returns it encrypted in cipheron's
+  // ciphertext format, under a key of its own derived from the current data key: format 4 (shared, derived; format
+  // 5 with associated_data), format 3 (wrapped; 6 with associated_data). Operation "encrypt".
+  rpc Encrypt(EncryptRequest) returns (EncryptResponse) {
+    option (google.api.http) = {
+      post: "/v1/cipher/{profile}/encrypt"
+      body: "*"
+    };
+  }
+
+  // Decrypt decrypts a ciphertext Encrypt or ReEncrypt produced for the profile — of any format the profile can
+  // read: 4 and 5 (shared, derived), 3 and 6 (wrapped) — and returns the plaintext sealed to the caller's one-time
+  // public key. Operation "decrypt".
+  rpc Decrypt(DecryptRequest) returns (DecryptResponse) {
+    option (google.api.http) = {
+      post: "/v1/cipher/{profile}/decrypt"
+      body: "*"
+    };
+  }
+
+  // Sign opens data sealed to the profile's HPKE key and signs it: in a shared profile with the active signing key
+  // over the data, in a derived profile with the active signing key over transport.TenantSignedMessage, in a
+  // wrapped profile with the tenant key's signing key over the data. Operation "sign".
+  rpc Sign(SignRequest) returns (SignResponse) {
+    option (google.api.http) = {
+      post: "/v1/cipher/{profile}/sign"
+      body: "*"
+    };
+  }
+
+  // ReEncrypt decrypts a stored ciphertext of the profile and encrypts the same plaintext again, under the current
+  // master version (format 4, or 5 with to_associated_data) — or, in a wrapped profile, under
+  // to_tenant_key (format 3, or 6) — without the plaintext ever leaving cipheron. It reads every format the profile
+  // can read (as Decrypt). It is how a service moves its rows to new keys; reading never requires it.
+  // Operation "reencrypt" within the profile; with to_profile (a cross-profile move) the caller's entry needs
+  // "export" on this profile and "import" on to_profile instead, and "retenant" on this profile when the move changes
+  // the tenant (another tenant, or between a shared and a perTenant profile) — both sides still signed under
+  // "reencrypt".
+  rpc ReEncrypt(ReEncryptRequest) returns (ReEncryptResponse) {
+    option (google.api.http) = {
+      post: "/v1/cipher/{profile}/reencrypt"
+      body: "*"
+    };
+  }
+
+  // CreateTenantKey makes a new key for a tenant of a perTenant wrapped profile — a storage key and an Ed25519
+  // signing key, from cipheron's approved random bit generator — and returns it wrapped (tenant_key) under the
+  // current tenant-wrapping version, for the application to store. Operation "provision". cipheron
+  // keeps nothing: each call makes another key. Refused in a shared or derived profile.
+  rpc CreateTenantKey(CreateTenantKeyRequest) returns (CreateTenantKeyResponse) {
+    option (google.api.http) = {
+      post: "/v1/cipher/{profile}/tenant-key"
+      body: "*"
+    };
+  }
+
+  // RewrapTenantKey opens a tenant key blob and returns the SAME tenant keys (same key id, same signing key, same
+  // creation time, same fingerprint) wrapped under the current tenant-wrapping version. Operation
+  // "provision"; its transcripts carry the label "rewrap-tenant-key", so its answers are never CreateTenantKey's.
+  // Refused in a shared or derived profile.
+  rpc RewrapTenantKey(RewrapTenantKeyRequest) returns (RewrapTenantKeyResponse) {
+    option (google.api.http) = {
+      post: "/v1/cipher/{profile}/rewrap-tenant-key"
+      body: "*"
+    };
+  }
+
+  // EncryptBatch is Encrypt over a list of plaintexts of one scope. Operation "encrypt"; transcript label
+  // "encrypt-batch".
+  rpc EncryptBatch(EncryptBatchRequest) returns (EncryptBatchResponse) {
+    option (google.api.http) = {
+      post: "/v1/cipher/{profile}/encrypt-batch"
+      body: "*"
+    };
+  }
+
+  // DecryptBatch is Decrypt over a list of ciphertexts of one scope, every plaintext sealed to the one
+  // recipient_public_key. Operation "decrypt"; transcript label "decrypt-batch".
+  rpc DecryptBatch(DecryptBatchRequest) returns (DecryptBatchResponse) {
+    option (google.api.http) = {
+      post: "/v1/cipher/{profile}/decrypt-batch"
+      body: "*"
+    };
+  }
+
+  // ReEncryptBatch is ReEncrypt (within the profile) over a list of ciphertexts of one scope. Operation
+  // "reencrypt"; transcript label "reencrypt-batch". An item with associated_data and no to_associated_data is
+  // refused as ReEncrypt refuses it, as that item's error.
+  rpc ReEncryptBatch(ReEncryptBatchRequest) returns (ReEncryptBatchResponse) {
+    option (google.api.http) = {
+      post: "/v1/cipher/{profile}/reencrypt-batch"
+      body: "*"
+    };
+  }
+
+  // RewrapTenantKeyBatch is RewrapTenantKey over a list of (tenant, blob). Operation "provision"; transcript label
+  // "rewrap-tenant-key-batch". Each item's tenant is checked as RewrapTenantKey's (a tenant id, the profile's
+  // tenancy); a refusal is that item's.
+  rpc RewrapTenantKeyBatch(RewrapTenantKeyBatchRequest) returns (RewrapTenantKeyBatchResponse) {
+    option (google.api.http) = {
+      post: "/v1/cipher/{profile}/rewrap-tenant-key-batch"
+      body: "*"
+    };
+  }
+}
+
+// SignatureAlgorithm is the algorithm of a signing key or a response key. This protocol implements Ed25519 only; a
+// client keeps a key of another algorithm listed and uses it for nothing (the crypto-agility extension point). A
+// signing key's id binds its algorithm (transport.SigningKeyIDOf), so keys_signature, which covers the id, covers
+// the algorithm.
+enum SignatureAlgorithm {
+  SIGNATURE_ALGORITHM_UNSPECIFIED = 0;
+  // Ed25519 (RFC 8032, pure).
+  SIGNATURE_ALGORITHM_ED25519 = 1;
+}
+
+// HpkeSuite names an HPKE suite by its RFC 9180 identifiers. This protocol implements one: DHKEM(P-256,
+// HKDF-SHA256), HKDF-SHA256, AES-256-GCM (0x0010, 0x0001, 0x0002).
+message HpkeSuite {
+  uint32 kem_id = 1;
+  uint32 kdf_id = 2;
+  uint32 aead_id = 3;
+}
+
+// IdentityKeyRole is what an identity key added to a profile's identity is for.
+enum IdentityKeyRole {
+  IDENTITY_KEY_ROLE_UNSPECIFIED = 0;
+  // A key requests may be sealed to (hpke_suite names its suite).
+  IDENTITY_KEY_ROLE_HPKE = 1;
+  // A key answers may be signed by (signature_algorithm names its algorithm).
+  IDENTITY_KEY_ROLE_RESPONSE = 2;
+}
+
+// IdentityKey is a key ADDED to a profile's identity after it was made (a post-quantum or hybrid key, a later
+// release): the fingerprint covers it (fingerprint version 2), so a pin covers it. This release adds none, and a
+// client uses none: it tolerates any role, suite and algorithm here.
+message IdentityKey {
+  IdentityKeyRole role = 1;
+  // The suite of an HPKE key; unset for a response key.
+  HpkeSuite hpke_suite = 2;
+  // The algorithm of a response key; UNSPECIFIED for an HPKE key.
+  SignatureAlgorithm signature_algorithm = 3;
+  bytes public_key = 4;
+}
+
+// ItemError is one batch item's failure: the gRPC code (google.rpc.Code) and, when the single operation would have
+// carried one, its ErrorInfo reason (CIPHERON_…); the message is for humans. It is covered by the batch's response
+// signature like a result.
+message ItemError {
+  uint32 code = 1;
+  string reason = 2;
+  string message = 3;
+}
+
+// Tenancy is a profile's mode, fixed for its life. It is in the fingerprint and in the key-context digest.
+enum Tenancy {
+  TENANCY_UNSPECIFIED = 0;
+  // One set of keys for every caller (transport.TenancyShared, "shared").
+  TENANCY_SHARED = 1;
+  // A key per tenant, made by CreateTenantKey and stored by the application as a tenant key blob
+  // (transport.TenancyPerTenantWrapped, "perTenantWrapped"). The profile has no signing key of its own.
+  TENANCY_PER_TENANT_WRAPPED = 2;
+  // Every tenant's keys derived from the profile's keys and the tenant id; nothing stored anywhere
+  // (transport.TenancyPerTenantDerived, "perTenantDerived").
+  TENANCY_PER_TENANT_DERIVED = 3;
+}
+
+// SigningKeyState is a signing key version's state.
+enum SigningKeyState {
+  SIGNING_KEY_STATE_UNSPECIFIED = 0;
+  // The key Sign signs with. Exactly one per profile that has signing keys.
+  SIGNING_KEY_STATE_ACTIVE = 1;
+  // Listed so its signatures keep verifying; Sign does not use it.
+  SIGNING_KEY_STATE_VERIFY_ONLY = 2;
+  // Revoked, for good: listed (its public key stays in the list), never signs, and a client refuses every signature
+  // under it. The keyset records it and holds no private key for it any more.
+  SIGNING_KEY_STATE_REVOKED = 3;
+}
+
+// SigningKey is one version of a profile's signing key.
+message SigningKey {
+  // transport.SigningKeyID(public_key): 16 bytes, the first half of a SHA-256 of the public key. A client checks
+  // it; Sign's answer names the key it signed with by it.
+  bytes key_id = 1;
+  // ACTIVE, VERIFY_ONLY or REVOKED; keys_signature covers the state's number. A client refuses an answer with any
+  // other state.
+  SigningKeyState state = 2;
+  // The public key (Ed25519: 32 bytes).
+  bytes public_key = 3;
+  // The key's algorithm (ED25519; never UNSPECIFIED). key_id binds it: the Ed25519 id is SigningKeyID(public_key),
+  // another algorithm's names the algorithm too (transport.SigningKeyIDOf).
+  SignatureAlgorithm algorithm = 4;
+}
+
+message PublicKeyRequest {
+  // The profile, as configured.
+  string profile = 1;
+  // 16 random bytes, new for every request (transport.NonceLen): keys_signature is made over it
+  // (transport.SigningKeysTranscript), so the answer is FRESH — a recorded older answer (an older signing-key list
+  // or context digest) does not verify for this request. A client checks keys_signature under its own nonce and
+  // refuses any other answer. Any other length is refused (INVALID_ARGUMENT), none included: an answer over the
+  // empty nonce would pass for every later request without one, for the identity's life.
+  bytes request_nonce = 2;
+}
+
+// PublicKeyResponse is the profile's public keys.
+//
+// The profile's fingerprint (transport.Fingerprint; `cipheron keygen` prints it, a client pins it) covers the
+// profile, tenancy, hpke_public_key and response_public_key — the identity, which never changes — and their suite
+// and algorithm and any additional identity key. A CLASSICAL identity (hpke_suite 0x0010/0x0001/0x0002, an
+// Ed25519 response key, no additional key: every profile this release makes) has fingerprint version 1; any other
+// has fingerprint version 2, which names the suite, the algorithms and every key (transport.Fingerprint).
+// signing_keys and context_digest are not in it: they are authenticated by keys_signature, which verifies under the
+// (pinned) response key.
+message PublicKeyResponse {
+  // Identity: the HPKE public key requests are sealed to (SerializePublicKey of RFC 9180: an uncompressed P-256
+  // point, 65 bytes). Never rotates.
+  bytes hpke_public_key = 1;
+  // Identity: the Ed25519 public key (32 bytes) every response_signature and keys_signature verifies under.
+  // Never rotates.
+  bytes response_public_key = 3;
+  // Identity: the profile's tenancy.
+  Tenancy tenancy = 4;
+  // Every signing key version the profile has ever signed with, in canonical order (ascending key_id), exactly one
+  // ACTIVE, any number VERIFY_ONLY or REVOKED. Shared and derived profiles: at least one. Wrapped profiles: none
+  // (each tenant key has its own).
+  repeated SigningKey signing_keys = 5;
+  // Ed25519 by the response key over transport.SigningKeysTranscript: label "cipheron/v1|signed_keys", the transcript
+  // version (1), profile, tenancy, context_digest, the request's request_nonce, then the number of signing keys and
+  // each one (key_id, the state's number, public_key) in canonical order.
+  bytes keys_signature = 6;
+  // transport.ContextDigest of the profile's key context: "sha256:" and 64 lower-case hex digits. Members of a
+  // group sharing the profile must answer the same one; a service may pin it (expectContext).
+  string context_digest = 7;
+  // Identity: the suite of hpke_public_key. Always written; a client refuses an answer without it and seals nothing
+  // to a key of a suite it does not implement.
+  HpkeSuite hpke_suite = 10;
+  // Identity: the algorithm of response_public_key (ED25519). Always written.
+  SignatureAlgorithm response_key_algorithm = 11;
+  // Identity: keys added to the identity after the profile was made (none in this release). Covered by the
+  // fingerprint (version 2).
+  repeated IdentityKey additional_identity_keys = 12;
+  // The profile's key statement (transport.KeyStatement): its identity, tenancy, context digest, signing keys with
+  // their states and algorithms and the time cipheron issued it — WITHOUT a nonce, so it can be published and
+  // verified offline against the pinned fingerprint (the identity inside is what the fingerprint covers). It
+  // proves no freshness: a verifier bounds its age by issued_at.
+  bytes key_statement = 13;
+  // Ed25519 by the response key over key_statement's bytes.
+  bytes key_statement_signature = 14;
+}
+
+// RequestAuth is a caller's proof that it made this request now: an Ed25519 signature by one of the caller
+// entry's request keys over the request transcript (transport.RequestTranscript): label
+// "cipheron/v1|signed_request", the transcript version (1), the profile, the operation's transcript label,
+// timestamp_ms, the request's request_nonce and a digest of the request's payload fields. cipheron accepts a
+// timestamp within its configured skew and each nonce once. The answer's response_signature is over the response
+// transcript (transport.ResponseTranscript, label "cipheron/v1|signed_response", with the answering cipheron's
+// key-context digest).
+message RequestAuth {
+  // Milliseconds since the Unix epoch, when the client made the request.
+  int64 timestamp_ms = 1;
+  // The Ed25519 signature (64 bytes).
+  bytes signature = 2;
+}
+
+message EncryptRequest {
+  string profile = 1;
+  // The HPKE encapsulated key (65 bytes).
+  bytes enc = 2;
+  // The plaintext, sealed with HPKE to the profile's key (info binds profile, "encrypt", the tenant and the requester's request key).
+  bytes sealed_plaintext = 3;
+  // 16 random bytes, new for every request: the response is signed over it, and RequestAuth makes it single-use.
+  bytes request_nonce = 4;
+  // Required when the caller entry has request keys.
+  RequestAuth auth = 5;
+  // The tenant (1 to 2048 bytes of printable ASCII, 0x21 to 0x7E): required in a perTenant profile (wrapped or
+  // derived), refused in a shared one.
+  string tenant = 6;
+  // The tenant's key blob (CreateTenantKey, RewrapTenantKey): required in a perTenant wrapped profile, refused in a
+  // shared or derived one.
+  bytes tenant_key = 7;
+  // Caller associated data (1 to 65536 bytes; empty: none): bound into the ciphertext's AEAD, never stored in it.
+  // With it the ciphertext is format 5 (shared, derived) or 6 (wrapped), which records that it is required: Decrypt
+  // refuses it without associated data (CIPHERON_ASSOCIATED_DATA) and with other associated data it does not
+  // decrypt. When present it is the request digest's last field (transport.EncryptDigestAAD).
+  bytes associated_data = 9;
+}
+
+message EncryptResponse {
+  // The stored ciphertext. Shared and derived profiles: format 4, "CPH1" | 4 | len (1) | master version id |
+  // salt (32) | nonce (12) | AES-256-GCM ciphertext and tag (16); format 5, the same
+  // layout with the byte 5, made with associated_data. Wrapped profiles: format 3, "CPH1" | 3 | tenant key id (16) |
+  // salt (32) | nonce (12) | ciphertext and tag; format 6, the same with the byte 6 and associated_data
+  // (transport.ParseKeyID reads them all).
+  bytes ciphertext = 1;
+  // Over the response transcript: operation "encrypt", request digest transport.EncryptDigest(enc,
+  // sealed_plaintext, tenant, tenant_key) — transport.EncryptDigestAAD, with associated_data as a last field, when
+  // it is set —, response digest transport.CiphertextResponseDigest(ciphertext).
+  bytes response_signature = 2;
+}
+
+message DecryptRequest {
+  string profile = 1;
+  // The client's one-time P-256 public key (uncompressed point) the plaintext is sealed back to.
+  bytes recipient_public_key = 2;
+  // A ciphertext of the profile: format 4 or 5 (shared, derived), 3 or 6 (wrapped); 5 and 6 need associated_data.
+  bytes ciphertext = 3;
+  // As EncryptRequest's.
+  bytes request_nonce = 4;
+  // Required when the caller entry has request keys.
+  RequestAuth auth = 5;
+  // As EncryptRequest's.
+  string tenant = 6;
+  // As EncryptRequest's.
+  bytes tenant_key = 7;
+  // The associated data the ciphertext was made with: required for format 5 and 6, refused for 3 and 4
+  // (CIPHERON_ASSOCIATED_DATA). When present it is the request digest's last field (transport.DecryptDigestAAD).
+  bytes associated_data = 9;
+}
+
+message DecryptResponse {
+  // The HPKE encapsulated key.
+  bytes enc = 1;
+  // The plaintext, sealed with HPKE to recipient_public_key (info binds profile, "decrypt" and the tenant).
+  bytes sealed_plaintext = 2;
+  // Over the response transcript: operation "decrypt", request digest transport.DecryptDigest(
+  // recipient_public_key, ciphertext, tenant, tenant_key) — transport.DecryptDigestAAD, with associated_data as a
+  // last field, when it is set —, response digest of recipient_public_key, enc and sealed_plaintext.
+  bytes response_signature = 3;
+}
+
+message SignRequest {
+  string profile = 1;
+  // The HPKE encapsulated key (65 bytes).
+  bytes enc = 2;
+  // The data to sign, sealed with HPKE to the profile's key (info binds profile, "sign", the tenant and the requester's request key).
+  bytes sealed_data = 3;
+  // As EncryptRequest's.
+  bytes request_nonce = 4;
+  // Required when the caller entry has request keys.
+  RequestAuth auth = 5;
+  // As EncryptRequest's.
+  string tenant = 6;
+  // As EncryptRequest's.
+  bytes tenant_key = 7;
+}
+
+message SignResponse {
+  // The Ed25519 signature (64 bytes). Shared profile: over the data. Derived profile: over
+  // transport.TenantSignedMessage(profile, tenant, data). Wrapped profile: over the data, by the tenant key.
+  bytes signature = 1;
+  // The key that signed (16 bytes): a signing key's key_id (PublicKeyResponse.signing_keys) in a shared or
+  // derived profile, the tenant key's id (the blob's) in a wrapped one.
+  bytes key_id = 2;
+  // Over the response transcript: operation "sign", request digest transport.SignDigest(enc, sealed_data, tenant,
+  // tenant_key), response digest transport.SignResponseDigest(signature, key_id).
+  bytes response_signature = 3;
+}
+
+message ReEncryptRequest {
+  string profile = 1;
+  // A stored ciphertext of the profile, of any format it can read (as DecryptRequest's; 5 and 6 need
+  // associated_data).
+  bytes ciphertext = 2;
+  // As EncryptRequest's: required in a perTenant profile (wrapped or derived), refused in a shared one.
+  string tenant = 3;
+  // Wrapped profile: required — the blob of the tenant key the ciphertext was made under (its key id must be the
+  // ciphertext's). Refused in a shared or derived profile.
+  bytes tenant_key = 4;
+  // Wrapped profile: required — the blob of the tenant key to encrypt under (the same tenant's; usually its new
+  // key, made by CreateTenantKey). Refused in a shared or derived profile, whose result is always under the
+  // current master version.
+  bytes to_tenant_key = 5;
+  // As EncryptRequest's.
+  bytes request_nonce = 6;
+  // Required when the caller entry has request keys (operation "reencrypt", request digest
+  // transport.ReEncryptDigest(ciphertext, tenant, tenant_key, to_tenant_key)).
+  RequestAuth auth = 7;
+  // The associated data the stored ciphertext was made with (as DecryptRequest's).
+  bytes associated_data = 9;
+  // The associated data the new ciphertext is made with (as EncryptRequest's); empty: none. The same bytes as
+  // associated_data: a re-encryption keeps the binding. Empty with associated_data set drops it, which is refused to
+  // every caller (INVALID_ARGUMENT, CIPHERON_ASSOCIATED_DATA); other bytes — or some where associated_data is empty —
+  // re-bind the value, served only to a caller entry granted decrypt on this profile and encrypt on the profile the new
+  // ciphertext is made in (PERMISSION_DENIED otherwise). Both are decided before anything is decrypted.
+  bytes to_associated_data = 10;
+  // Cross-profile: the profile to re-encrypt into, served by the same cipheron (empty, or the request's own profile:
+  // within the profile). The caller's connection identity must be listed in it with operation "import" (and in
+  // this profile with "export", and with "retenant" when the move changes the tenant), and the target's tenancy rules
+  // apply to to_tenant and to_tenant_key. The plaintext never leaves cipheron. Import is a write grant into
+  // to_profile: whatever its holder can export becomes to_profile's data.
+  string to_profile = 11;
+  // Cross-profile: the tenant in to_profile (perTenant targets; empty: the request's tenant). Refused within a
+  // profile: a ciphertext never moves to another tenant of the same profile.
+  string to_tenant = 12;
+  // Cross-profile: required when the caller's entry in to_profile has request keys — a signature by one of them over
+  // the request transcript of to_profile (same operation, timestamp rules, nonce and digest), held to that entry's
+  // replay cache.
+  RequestAuth to_auth = 13;
+}
+
+message ReEncryptResponse {
+  // The same plaintext, encrypted again: format 4 (5 with to_associated_data) under the current master version
+  // (shared, derived), format 3 (6) under to_tenant_key (wrapped) — of to_profile's tenancy when set.
+  bytes ciphertext = 1;
+  // Over the response transcript: operation "reencrypt", request digest transport.ReEncryptDigest (with the
+  // extension group transport.ReEncryptDigestExt when any of fields 9 to 12 is set), response digest
+  // transport.CiphertextResponseDigest(ciphertext).
+  bytes response_signature = 2;
+  // Cross-profile only: the same transcript under to_profile, signed by to_profile's response key.
+  bytes to_response_signature = 3;
+}
+
+message CreateTenantKeyRequest {
+  // A perTenant wrapped profile.
+  string profile = 1;
+  // The tenant the key is for.
+  string tenant = 2;
+  // As EncryptRequest's.
+  bytes request_nonce = 3;
+  // Required when the caller entry has request keys (operation "provision", request digest
+  // transport.ProvisionDigest(tenant): tenant and an empty tenant key).
+  RequestAuth auth = 4;
+}
+
+message CreateTenantKeyResponse {
+  // The tenant key blob (transport.ParseTenantKey), version 1: "CPT1" | 1 | key id (16) | lp(profile) | lp(tenant) |
+  // signing public key (32) | len (1) | wrapping master version id | created (8) | salt (32) |
+  // nonce (12) | the wrapped storage and signing keys (96) and tag (16) — 226 bytes plus the profile, the tenant and
+  // the version id, at most 2369 (transport.MaxTenantKeyLen). The salt makes each blob's wrap key its own. The
+  // application stores it; deleting it (and every older blob of the same key) erases the tenant's keys.
+  bytes tenant_key = 1;
+  // The tenant key's Ed25519 signing public key (32 bytes): Sign's signatures for the tenant verify under it.
+  bytes signing_public_key = 2;
+  // The tenant key's fingerprint (transport.TenantFingerprint), which a client may pin.
+  string fingerprint = 3;
+  // Over the response transcript: operation "provision", request digest transport.ProvisionDigest(tenant),
+  // response digest transport.TenantKeyResponseDigest(tenant_key, signing_public_key, fingerprint).
+  bytes response_signature = 4;
+}
+
+message RewrapTenantKeyRequest {
+  // A perTenant wrapped profile.
+  string profile = 1;
+  // The tenant.
+  string tenant = 2;
+  // The tenant's key blob (CreateTenantKeyResponse.tenant_key's layout), one the profile can open.
+  bytes tenant_key = 3;
+  // As EncryptRequest's.
+  bytes request_nonce = 4;
+  // Required when the caller entry has request keys (transcript label "rewrap-tenant-key", request digest
+  // transport.RewrapTenantKeyDigest(tenant, tenant_key)). Authorized as operation "provision".
+  RequestAuth auth = 5;
+}
+
+message RewrapTenantKeyResponse {
+  // The same tenant key wrapped under the current tenant-wrapping version: the same key id, signing
+  // public key and creation time, in the one blob layout (CreateTenantKeyResponse.tenant_key). The old blob keeps
+  // opening while its wrapping version is listed.
+  bytes tenant_key = 1;
+  // The tenant key's Ed25519 signing public key: unchanged.
+  bytes signing_public_key = 2;
+  // The tenant key's fingerprint: unchanged, so a pin survives the rewrap.
+  string fingerprint = 3;
+  // Over the response transcript: label "rewrap-tenant-key", request digest transport.RewrapTenantKeyDigest,
+  // response digest transport.TenantKeyResponseDigest(tenant_key, signing_public_key, fingerprint).
+  bytes response_signature = 4;
+}
+
+message EncryptBatchItem {
+  // As EncryptRequest's, sealed for the batch's tenant.
+  bytes enc = 1;
+  bytes sealed_plaintext = 2;
+  bytes associated_data = 3;
+}
+
+message EncryptBatchRequest {
+  string profile = 1;
+  // 1 to batch.maxItems items, at most batch.maxBytes of payload in all.
+  repeated EncryptBatchItem items = 2;
+  // Every item's tenant and blob: as EncryptRequest's.
+  string tenant = 3;
+  bytes tenant_key = 4;
+  bytes request_nonce = 5;
+  // Over the request transcript under the label "encrypt-batch", request digest transport.BatchDigest of each
+  // item's transport.EncryptDigestAAD.
+  RequestAuth auth = 6;
+}
+
+// A batch item's result: the answer's fields, or error.
+message EncryptBatchResult {
+  bytes ciphertext = 1;
+  ItemError error = 2;
+}
+
+message EncryptBatchResponse {
+  // One per item, in the items' order.
+  repeated EncryptBatchResult results = 1;
+  // Over the response transcript under "encrypt-batch": response digest transport.BatchDigest of each result's
+  // transport.ItemResultDigest (CiphertextResponseDigest's fields) or transport.ItemErrorDigest.
+  bytes response_signature = 2;
+}
+
+message DecryptBatchItem {
+  bytes ciphertext = 1;
+  bytes associated_data = 2;
+}
+
+message DecryptBatchRequest {
+  string profile = 1;
+  // The one-time public key every plaintext of the answer is sealed to.
+  bytes recipient_public_key = 2;
+  repeated DecryptBatchItem items = 3;
+  string tenant = 4;
+  bytes tenant_key = 5;
+  bytes request_nonce = 6;
+  // Label "decrypt-batch"; item digests transport.DecryptDigestAAD(recipient_public_key, …).
+  RequestAuth auth = 7;
+}
+
+message DecryptBatchResult {
+  bytes enc = 1;
+  bytes sealed_plaintext = 2;
+  ItemError error = 3;
+}
+
+message DecryptBatchResponse {
+  repeated DecryptBatchResult results = 1;
+  bytes response_signature = 2;
+}
+
+message ReEncryptBatchItem {
+  bytes ciphertext = 1;
+  bytes associated_data = 2;
+  bytes to_associated_data = 3;
+}
+
+message ReEncryptBatchRequest {
+  string profile = 1;
+  repeated ReEncryptBatchItem items = 2;
+  string tenant = 3;
+  // Wrapped profile: the blob every item was made under, and the one to make them under.
+  bytes tenant_key = 4;
+  bytes to_tenant_key = 5;
+  bytes request_nonce = 6;
+  // Label "reencrypt-batch"; item digests transport.ReEncryptDigestExt.
+  RequestAuth auth = 7;
+}
+
+message ReEncryptBatchResult {
+  bytes ciphertext = 1;
+  ItemError error = 2;
+}
+
+message ReEncryptBatchResponse {
+  repeated ReEncryptBatchResult results = 1;
+  bytes response_signature = 2;
+}
+
+message RewrapTenantKeyBatchItem {
+  string tenant = 1;
+  bytes tenant_key = 2;
+}
+
+message RewrapTenantKeyBatchRequest {
+  // A perTenant wrapped profile.
+  string profile = 1;
+  repeated RewrapTenantKeyBatchItem items = 2;
+  bytes request_nonce = 3;
+  // Label "rewrap-tenant-key-batch"; item digests transport.RewrapTenantKeyDigest.
+  RequestAuth auth = 4;
+}
+
+message RewrapTenantKeyBatchResult {
+  bytes tenant_key = 1;
+  bytes signing_public_key = 2;
+  string fingerprint = 3;
+  ItemError error = 4;
+}
+
+message RewrapTenantKeyBatchResponse {
+  repeated RewrapTenantKeyBatchResult results = 1;
+  bytes response_signature = 2;
+}

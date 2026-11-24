@@ -1,0 +1,265 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/nnicora/cipheron/spec/vectors/vectors.schema.json",
+  "title": "cipheron conformance vectors",
+  "description": "A file of cipheron protocol vectors: every case names its kind, its input and the output a conforming implementation computes. Every byte string is lower-case hexadecimal. The layouts each kind computes are documented in spec/api.md (Conformance kit).",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "comment", "transcriptVersion", "cases"],
+  "properties": {
+    "schema": { "const": "cipheron-conformance/v1" },
+    "comment": { "type": "string" },
+    "transcriptVersion": { "const": 1 },
+    "cases": { "type": "array", "items": { "$ref": "#/$defs/case" } }
+  },
+  "$defs": {
+    "hex": { "type": "string", "pattern": "^([0-9a-f]{2})*$" },
+    "hex32": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "u32": { "type": "integer", "minimum": 0, "maximum": 4294967295 },
+    "u16": { "type": "integer", "minimum": 0, "maximum": 65535 },
+    "operation": {
+      "type": "string",
+      "enum": ["encrypt", "decrypt", "sign", "reencrypt", "provision", "rewrap-tenant-key", "encrypt-batch", "decrypt-batch", "reencrypt-batch", "rewrap-tenant-key-batch"]
+    },
+    "tenancy": { "type": "string", "enum": ["shared", "perTenantWrapped", "perTenantDerived"] },
+    "fingerprint": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" },
+    "tenant": { "type": "string", "minLength": 1, "maxLength": 2048, "pattern": "^[!-~]{1,2048}$" },
+    "tenantOrShared": { "anyOf": [ { "const": "" }, { "$ref": "#/$defs/tenant" } ] },
+    "profile": { "type": "string", "minLength": 1, "maxLength": 63, "pattern": "^[a-z][a-z0-9]*(-[a-z0-9]+)*$" },
+    "refusedOutput": {
+      "type": "object", "additionalProperties": false, "required": ["refused"],
+      "properties": { "refused": { "const": true } }
+    },
+    "hpkeSuite": {
+      "type": "object", "additionalProperties": false, "required": ["kem", "kdf", "aead"],
+      "properties": { "kem": { "$ref": "#/$defs/u16" }, "kdf": { "$ref": "#/$defs/u16" }, "aead": { "$ref": "#/$defs/u16" } }
+    },
+    "transcriptOutput": {
+      "type": "object", "additionalProperties": false, "required": ["transcript"],
+      "properties": { "transcript": { "$ref": "#/$defs/hex" } }
+    },
+    "associatedDataOutput": {
+      "type": "object", "additionalProperties": false, "required": ["associatedData"],
+      "properties": { "associatedData": { "$ref": "#/$defs/hex" } }
+    },
+    "validOutput": {
+      "type": "object", "additionalProperties": false, "required": ["valid"],
+      "properties": { "valid": { "type": "boolean" } }
+    },
+    "signatureInput": {
+      "type": "object", "additionalProperties": false, "required": ["publicKey", "transcript", "signature"],
+      "properties": {
+        "publicKey": { "$ref": "#/$defs/hex" },
+        "transcript": { "$ref": "#/$defs/hex" },
+        "signature": { "$ref": "#/$defs/hex" }
+      }
+    },
+    "case": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "kind", "input", "output"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "kind": { "type": "string" },
+        "note": { "type": "string" },
+        "input": { "type": "object" },
+        "output": { "type": "object" }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "kind": { "const": "digest" } } },
+          "then": { "properties": {
+            "input": { "type": "object", "additionalProperties": false, "required": ["fields"],
+              "properties": { "fields": { "type": "array", "items": { "$ref": "#/$defs/hex" } } } },
+            "output": { "type": "object", "additionalProperties": false, "required": ["digest"],
+              "properties": { "digest": { "$ref": "#/$defs/hex32" } } } } }
+        },
+        {
+          "if": { "properties": { "kind": { "const": "requestTranscript" } } },
+          "then": { "properties": {
+            "input": { "type": "object", "additionalProperties": false,
+              "required": ["profile", "operation", "timestampMs", "nonce", "digest"],
+              "properties": {
+                "profile": { "type": "string" }, "operation": { "$ref": "#/$defs/operation" },
+                "timestampMs": { "type": "integer" }, "nonce": { "$ref": "#/$defs/hex" }, "digest": { "$ref": "#/$defs/hex32" } } },
+            "output": { "$ref": "#/$defs/transcriptOutput" } } }
+        },
+        {
+          "if": { "properties": { "kind": { "enum": ["requestSignature", "responseSignature"] } } },
+          "then": { "properties": { "input": { "$ref": "#/$defs/signatureInput" }, "output": { "$ref": "#/$defs/validOutput" } } }
+        },
+        {
+          "if": { "properties": { "kind": { "const": "requestSealInfo" } } },
+          "then": { "properties": {
+            "input": { "type": "object", "additionalProperties": false,
+              "required": ["profile", "operation", "tenant", "requestPublicKey"],
+              "properties": {
+                "profile": { "type": "string" }, "operation": { "$ref": "#/$defs/operation" },
+                "tenant": { "$ref": "#/$defs/tenantOrShared" }, "requestPublicKey": { "$ref": "#/$defs/hex" } } },
+            "output": { "type": "object", "additionalProperties": false, "required": ["info"],
+              "properties": { "info": { "$ref": "#/$defs/hex" } } } } }
+        },
+        {
+          "if": { "properties": { "kind": { "const": "responseSealInfo" } } },
+          "then": { "properties": {
+            "input": { "type": "object", "additionalProperties": false,
+              "required": ["profile", "operation", "tenant"],
+              "properties": {
+                "profile": { "type": "string" }, "operation": { "$ref": "#/$defs/operation" }, "tenant": { "$ref": "#/$defs/tenantOrShared" } } },
+            "output": { "type": "object", "additionalProperties": false, "required": ["info"],
+              "properties": { "info": { "$ref": "#/$defs/hex" } } } } }
+        },
+        {
+          "if": { "properties": { "kind": { "const": "responseTranscript" } } },
+          "then": { "properties": {
+            "input": { "type": "object", "additionalProperties": false,
+              "required": ["profile", "contextDigest", "operation", "requestNonce", "requestSignature", "requestDigest", "responseDigest"],
+              "properties": {
+                "profile": { "type": "string" }, "contextDigest": { "$ref": "#/$defs/fingerprint" },
+                "operation": { "$ref": "#/$defs/operation" },
+                "requestNonce": { "$ref": "#/$defs/hex" }, "requestSignature": { "$ref": "#/$defs/hex" },
+                "requestDigest": { "$ref": "#/$defs/hex32" }, "responseDigest": { "$ref": "#/$defs/hex32" } } },
+            "output": { "$ref": "#/$defs/transcriptOutput" } } }
+        },
+        {
+          "if": { "properties": { "kind": { "const": "signingKeysTranscript" } } },
+          "then": { "properties": {
+            "input": { "type": "object", "additionalProperties": false,
+              "required": ["profile", "tenancy", "contextDigest", "nonce", "keys"],
+              "properties": {
+                "profile": { "type": "string" }, "tenancy": { "$ref": "#/$defs/tenancy" },
+                "contextDigest": { "type": "string" }, "nonce": { "$ref": "#/$defs/hex" },
+                "keys": { "type": "array", "items": { "type": "object", "additionalProperties": false,
+                  "required": ["keyId", "state", "publicKey"],
+                  "properties": { "keyId": { "$ref": "#/$defs/hex" }, "state": { "enum": ["active", "verifyOnly", "revoked"] },
+                    "publicKey": { "$ref": "#/$defs/hex" } } } } } },
+            "output": { "$ref": "#/$defs/transcriptOutput" } } }
+        },
+        {
+          "if": { "properties": { "kind": { "const": "fingerprint" } } },
+          "then": { "properties": {
+            "input": { "type": "object", "additionalProperties": false,
+              "required": ["profile", "tenancy", "hpkeSuite", "hpkePublicKey", "responseAlgorithm", "responsePublicKey"],
+              "properties": {
+                "profile": { "type": "string" }, "tenancy": { "$ref": "#/$defs/tenancy" },
+                "hpkeSuite": { "$ref": "#/$defs/hpkeSuite" },
+                "hpkePublicKey": { "$ref": "#/$defs/hex" }, "responseAlgorithm": { "$ref": "#/$defs/u32" },
+                "responsePublicKey": { "$ref": "#/$defs/hex" },
+                "additional": { "type": "array", "minItems": 1, "maxItems": 8, "items": { "type": "object",
+                  "additionalProperties": false, "required": ["role", "suite", "algorithm", "publicKey"],
+                  "properties": { "role": { "$ref": "#/$defs/u32" }, "suite": { "$ref": "#/$defs/hpkeSuite" },
+                    "algorithm": { "$ref": "#/$defs/u32" }, "publicKey": { "$ref": "#/$defs/hex" } } } } } },
+            "output": { "type": "object", "additionalProperties": false, "required": ["fingerprint"],
+              "properties": { "fingerprint": { "$ref": "#/$defs/fingerprint" } } } } }
+        },
+        {
+          "if": { "properties": { "kind": { "const": "keyStatement" } } },
+          "then": { "properties": {
+            "input": { "type": "object", "additionalProperties": false, "required": ["statement", "signature", "profile", "fingerprint"],
+              "properties": {
+                "statement": { "$ref": "#/$defs/hex" }, "signature": { "$ref": "#/$defs/hex" },
+                "profile": { "type": "string" }, "fingerprint": { "$ref": "#/$defs/fingerprint" } } },
+            "output": { "$ref": "#/$defs/validOutput" } } }
+        },
+        {
+          "if": { "properties": { "kind": { "const": "ciphertextKeyID" } } },
+          "then": { "properties": {
+            "input": { "type": "object", "additionalProperties": false, "required": ["ciphertext"],
+              "properties": { "ciphertext": { "$ref": "#/$defs/hex" } } },
+            "output": { "oneOf": [
+              { "type": "object", "additionalProperties": false, "required": ["keyId"],
+                "properties": { "keyId": { "type": "string", "pattern": "^([A-Za-z0-9._-]{1,32}/(0|[1-9][0-9]{0,9})|tenant-key:[0-9a-f]{32})$" } } },
+              { "$ref": "#/$defs/refusedOutput" } ] } } }
+        },
+        {
+          "if": { "properties": { "kind": { "const": "signingKeyID" } } },
+          "then": { "properties": {
+            "input": { "type": "object", "additionalProperties": false, "required": ["algorithm", "publicKey"],
+              "properties": { "algorithm": { "$ref": "#/$defs/u32" }, "publicKey": { "$ref": "#/$defs/hex" } } },
+            "output": { "type": "object", "additionalProperties": false, "required": ["keyId"],
+              "properties": { "keyId": { "$ref": "#/$defs/hex" } } } } }
+        },
+        {
+          "if": { "properties": { "kind": { "const": "segmentAssociatedData" } } },
+          "then": { "properties": {
+            "input": { "type": "object", "additionalProperties": false, "required": ["objectId", "index", "final", "associatedData"],
+              "properties": { "objectId": { "$ref": "#/$defs/hex" }, "index": { "$ref": "#/$defs/u32" },
+                "final": { "type": "boolean" }, "associatedData": { "$ref": "#/$defs/hex" } } },
+            "output": { "$ref": "#/$defs/associatedDataOutput" } } }
+        },
+        {
+          "if": { "properties": { "kind": { "const": "jsonFieldAssociatedData" } } },
+          "then": { "properties": {
+            "input": { "type": "object", "additionalProperties": false, "required": ["recordId", "pointer", "associatedData"],
+              "properties": { "recordId": { "type": "string" }, "pointer": { "type": "string" },
+                "associatedData": { "$ref": "#/$defs/hex" } } },
+            "output": { "$ref": "#/$defs/associatedDataOutput" } } }
+        },
+        {
+          "if": { "properties": { "kind": { "const": "reEncryptAssociatedData" } } },
+          "then": { "properties": {
+            "input": { "type": "object", "additionalProperties": false, "required": ["associatedData", "toAssociatedData"],
+              "properties": { "associatedData": { "$ref": "#/$defs/hex" }, "toAssociatedData": { "$ref": "#/$defs/hex" } } },
+            "output": { "$ref": "#/$defs/validOutput" } } }
+        },
+        {
+          "if": { "properties": { "kind": { "const": "tenantKey" } } },
+          "then": { "properties": {
+            "input": { "type": "object", "additionalProperties": false, "required": ["blob", "profile", "tenant"],
+              "properties": { "blob": { "$ref": "#/$defs/hex" }, "profile": { "type": "string" }, "tenant": { "type": "string" } } },
+            "output": { "oneOf": [
+              { "type": "object", "additionalProperties": false,
+                "required": ["keyId", "signingPublicKey", "wrappingVersion", "created", "fingerprint"],
+                "properties": { "keyId": { "type": "string", "pattern": "^[0-9a-f]{32}$" },
+                  "signingPublicKey": { "$ref": "#/$defs/hex32" },
+                  "wrappingVersion": { "type": "string", "pattern": "^[A-Za-z0-9._-]{1,32}$" },
+                  "created": { "type": "integer", "minimum": 1 }, "fingerprint": { "$ref": "#/$defs/fingerprint" } } },
+              { "$ref": "#/$defs/refusedOutput" } ] } } }
+        },
+        {
+          "if": { "properties": { "kind": { "const": "tenantFingerprint" } } },
+          "then": { "properties": {
+            "input": { "type": "object", "additionalProperties": false, "required": ["profile", "tenant", "keyId", "signingPublicKey"],
+              "properties": { "profile": { "$ref": "#/$defs/profile" }, "tenant": { "$ref": "#/$defs/tenant" },
+                "keyId": { "$ref": "#/$defs/hex" }, "signingPublicKey": { "$ref": "#/$defs/hex" } } },
+            "output": { "type": "object", "additionalProperties": false, "required": ["fingerprint"],
+              "properties": { "fingerprint": { "$ref": "#/$defs/fingerprint" } } } } }
+        },
+        {
+          "if": { "properties": { "kind": { "const": "tenantSignedMessage" } } },
+          "then": { "properties": {
+            "input": { "type": "object", "additionalProperties": false, "required": ["profile", "tenant", "data"],
+              "properties": { "profile": { "$ref": "#/$defs/profile" }, "tenant": { "$ref": "#/$defs/tenant" },
+                "data": { "$ref": "#/$defs/hex" } } },
+            "output": { "type": "object", "additionalProperties": false, "required": ["message"],
+              "properties": { "message": { "$ref": "#/$defs/hex" } } } } }
+        },
+        {
+          "if": { "properties": { "kind": { "const": "tenantId" } } },
+          "then": { "properties": {
+            "input": { "type": "object", "additionalProperties": false, "required": ["tenant"],
+              "properties": { "tenant": { "type": "string" } } },
+            "output": { "$ref": "#/$defs/validOutput" } } }
+        },
+        {
+          "if": { "properties": { "kind": { "const": "errorClass" } } },
+          "then": { "properties": {
+            "input": { "type": "object", "additionalProperties": false, "required": ["code"],
+              "properties": {
+                "code": { "enum": ["OK", "CANCELLED", "UNKNOWN", "INVALID_ARGUMENT", "DEADLINE_EXCEEDED", "NOT_FOUND", "ALREADY_EXISTS", "PERMISSION_DENIED", "RESOURCE_EXHAUSTED", "FAILED_PRECONDITION", "ABORTED", "OUT_OF_RANGE", "UNIMPLEMENTED", "INTERNAL", "UNAVAILABLE", "DATA_LOSS", "UNAUTHENTICATED"] },
+                "errorInfo": { "type": "object", "additionalProperties": false, "required": ["domain", "reason"],
+                  "properties": { "domain": { "type": "string" }, "reason": { "type": "string" } } },
+                "retryDelayMs": { "type": "integer", "minimum": 0 } } },
+            "output": { "type": "object", "additionalProperties": false, "required": ["class", "retry", "minWaitMs"],
+              "properties": {
+                "class": { "enum": ["permissionDenied", "invalidInput", "keyVersionUnavailable", "associatedData", "batchLimit", "busy", "resourceExhausted", "noWriter", "profileSealed", "auditUnavailable", "starting", "unavailable", "unsupported", "internal", "other"] },
+                "retry": { "enum": ["never", "transient", "resign"] },
+                "minWaitMs": { "type": "integer", "minimum": 0 } } } } }
+        },
+        {
+          "properties": { "kind": { "enum": ["digest", "requestTranscript", "requestSignature", "requestSealInfo", "responseSealInfo", "responseTranscript", "responseSignature", "signingKeysTranscript", "fingerprint", "keyStatement", "ciphertextKeyID", "signingKeyID", "segmentAssociatedData", "jsonFieldAssociatedData", "reEncryptAssociatedData", "tenantKey", "tenantFingerprint", "tenantSignedMessage", "tenantId", "errorClass"] } }
+        }
+      ]
+    }
+  }
+}

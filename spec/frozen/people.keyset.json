@@ -1,0 +1,33 @@
+{
+  "version": 1,
+  "kind": "perTenantDerived",
+  "profile": "people",
+  "created": "2026-11-17T09:00:00Z",
+  "hpkePublicKey": "BOvncwXR7ZpAMOk4HOsPtu8UDPrEMJaHxr2kU0bbIJQSMAi0sAuCS2Ye/l2/YJTh8xukEFxsQ3S77dSg4FHTN9A=",
+  "responsePublicKey": "/6uU83uOl8TsrOkW0Pu2kBSuXHEWnlis686ilV+phsY=",
+  "signingKeys": [
+    {
+      "keyId": "W3PvqBKbI0kzlN7OwWLU2g==",
+      "state": "active",
+      "publicKey": "G9wb7QYVZAwxL0Gg1LPirN57Y77JtX2NeYvo4jH4u58="
+    },
+    {
+      "keyId": "KkQXYlYzYNDegREJpFz25A==",
+      "state": "verifyOnly",
+      "publicKey": "461HewkdTJjSGOXtuB6M14T9lexrLkeyhZCZvG+YO60="
+    }
+  ],
+  "wrappingVersion": "v1",
+  "masterVersions": [
+    {
+      "id": "v1",
+      "kcv": "Pft5BX3r+0i58yFBbwu5Lw=="
+    },
+    {
+      "id": "v2",
+      "kcv": "QXSCgciFM9TG61B3hjxj2w=="
+    }
+  ],
+  "fingerprint": "sha256:9508858932bd9398feaf84e60578da6a64669cf1e8f9d31685a9cf62dcf92db9",
+  "wrapped": "n0ZyZbCQVpve+Sh389vyeJPctXdnSFGGIX1cZks/gep6TLHNeUCxPS7C5Npp2Dx6woijSwhWxT6YLT2c5c37CO5nWPFQ3hsgV7rRuxVvpAAk6llUNnSAY4YItBvIeZDdfnZOo+AEFf8BW2QfGF2LrzADc6eUzjQKlaZUeDgqGtZUMopsOcxiPZGK+6YSUUVJ7MMLC82ho43i5/e9v8jNw1qsnMVyIes7qN6noC2oOfI4p76CgiBAQwPVCX+hrNqDyBhIRN0ND2lIh1sseS1VWCSWKnJiDQfFZ/utmDiF7zs9ai1IXPbwmZlNk+0qI9LuU7ymSoMKH5rQnC9GTzPfZiFFHZKTLTMiIV8y7w=="
+}
