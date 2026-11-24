@@ -96,9 +96,11 @@ jobs:
       - uses: golangci/golangci-lint-action@ba0d7d2ec06a0ea1cb5fa41b2e4a3ab91d21278a # v9.3.0
         with:
           # Built from source with the Go setup-go installed: a release binary built with an older Go refuses a
-          # module that targets a newer one. Keep in step with the Makefile's GOLANGCI_LINT_VERSION.
+          # module that targets a newer one. Keep in step with the Makefile's GOLANGCI_LINT_VERSION. v2.15.0 at least:
+          # v2.13.2 cannot read Go 1.27.4's export data ("export data version 5 is greater than maximum supported
+          # version 4").
           install-mode: goinstall
-          version: v2.13.2
+          version: v2.15.0
           # Never --fix: a CI job does not rewrite the code it judges.
           args: --timeout=15m
       # The runner lints linux; darwin's peer-credential code is its own file set. GOOS changes what is analysed,

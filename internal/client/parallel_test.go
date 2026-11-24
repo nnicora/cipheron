@@ -196,9 +196,23 @@ func TestStreamsAndObjectsArePipelinedInOrder(t *testing.T) {
 	ctx := context.Background()
 	c := &Client{maxMessage: DefaultMaxMessageBytes}
 	var inFlight, most, calls atomic.Int64
+	// overlapped is closed when a second batch is in flight while another is: until then a batch waits for it (at most
+	// pipelineWait), so the overlap is observed whatever the machine's speed — a pipelined sender sends the next batch
+	// while one is out, and the first stops waiting at once; one that sends a batch after the other never overlaps.
+	// A random delay alone let a slow runner (the race detector) finish each batch before the next was ready.
+	overlapped := make(chan struct{})
+	var overlap sync.Once
+	const pipelineWait = 2 * time.Second
 	slow := func() {
 		n := inFlight.Add(1)
 		for m := most.Load(); n > m && !most.CompareAndSwap(m, n); m = most.Load() {
+		}
+		if n >= 2 {
+			overlap.Do(func() { close(overlapped) })
+		}
+		select {
+		case <-overlapped:
+		case <-time.After(pipelineWait):
 		}
 		time.Sleep(time.Duration(rand.IntN(3000)) * time.Microsecond)
 		inFlight.Add(-1)

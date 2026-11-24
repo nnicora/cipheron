@@ -8,7 +8,7 @@ MODULE := github.com/nnicora/cipheron
 # generators' are the ones proto/ was generated with; golangci-lint is built from source by `go install`, so it is
 # built with this module's Go (a release binary built with an older Go refuses a module targeting a newer one).
 BUF_VERSION ?= v1.73.0
-GOLANGCI_LINT_VERSION ?= v2.13.2
+GOLANGCI_LINT_VERSION ?= v2.15.0
 PROTOC_GEN_GO_VERSION := v1.36.11
 PROTOC_GEN_GO_GRPC_VERSION := v1.6.1
 GRPC_GATEWAY_VERSION := v2.27.7
