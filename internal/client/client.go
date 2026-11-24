@@ -562,14 +562,17 @@ func (f *freshness) verifiedAt(t time.Time) {
 	f.mu.Unlock()
 }
 
-// age is how old the list is at now, and false when it has no age a decision may rest on: never verified, or verified
-// "after" now (only a clock that is not monotonic answers that; it is treated as stale — fail closed — never as fresh).
-func (f *freshness) age(now time.Time) (time.Duration, bool) {
+// age is how old the list is now, by clock, and false when it has no age a decision may rest on: never verified, or
+// verified "after" now (only a clock that is not monotonic answers that; it is treated as stale — fail closed — never
+// as fresh). The stamp is read BEFORE the clock: a fetch that another call completes concurrently stamps the list
+// after any instant read before that stamp, and that list read against the earlier instant would look verified in the
+// future — stale — and make this call fetch the keys a second time.
+func (f *freshness) age(clock func() time.Time) (time.Duration, bool) {
 	v := f.verified.Load()
 	if v == nil {
 		return 0, false
 	}
-	age := now.Sub(*v)
+	age := clock().Sub(*v)
 	return age, age >= 0
 }
 
@@ -1327,7 +1330,19 @@ func (c *Client) verifyResponse(ctx context.Context, profile string, k *Keys, op
 			return refused(d)
 		}
 	}
-	if _, err := c.load(ctx, profile); errors.Is(err, ErrServerKeyChanged) {
+	// The keys fetched again, unless a fetch another call completed since accepted was read already learnt a context
+	// the answer verifies under (a signing rotation: every answer after it is under the new digest, and many calls
+	// find it unknown at once) — then this call makes no second fetch. The check is unpinnedContext's own, without
+	// recording what it tried: what it accepts, unpinnedContext finds below.
+	learnt := func(*Keys) bool {
+		for _, d := range c.seenContexts(profile) {
+			if !slices.Contains(tried, d) && verifies(d) {
+				return true
+			}
+		}
+		return false
+	}
+	if _, err := c.loadUnless(ctx, profile, learnt); errors.Is(err, ErrServerKeyChanged) {
 		return err
 	}
 	if d, ok := unpinnedContext(); ok {
@@ -1734,11 +1749,11 @@ func (c *Client) current(ctx context.Context, s scope) (scope, error) {
 		return s, nil
 	}
 	f := c.freshnessOf(s.profile)
-	now := c.now()
-	age, known := f.age(now)
+	age, known := f.age(c.now)
 	if known && age <= c.keysMaxAge {
 		return s, nil
 	}
+	now := c.now()
 	stale := func(cause error) error {
 		when := "has no age this client can measure"
 		if known {
