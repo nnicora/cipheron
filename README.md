@@ -94,7 +94,7 @@ make check          # build, vet, tests (FIPS), lint, the docs and fixture check
 make test           # GOFIPS140=v1.26.0 go test ./...
 make test-race      # the race detector on the client and the protocol
 make proto-gen      # regenerate proto/ with the pinned generators (make install-proto-tools)
-make java-test         # the Java library: build and tests, against cipherontest (Java 21)
+make java-test         # the Java library: build and tests, against cipherontest (Java 21: JAVA_HOME, else found)
 make java-conformance  # the Java library held to the conformance vectors
 ```
 

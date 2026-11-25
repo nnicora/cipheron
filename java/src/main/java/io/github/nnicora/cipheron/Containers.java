@@ -1,11 +1,10 @@
 package io.github.nnicora.cipheron;
 
-import com.google.gson.Gson;
-import com.google.gson.GsonBuilder;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParseException;
+import com.google.gson.JsonParser;
 import com.google.gson.JsonPrimitive;
 import com.google.gson.Strictness;
 import com.google.gson.stream.JsonReader;
@@ -44,7 +43,6 @@ final class Containers {
     static final String JSON_FIELD_PREFIX = "cipheron:v1:";
 
     private static final SecureRandom RANDOM = new SecureRandom();
-    private static final Gson GSON = new GsonBuilder().disableHtmlEscaping().serializeNulls().create();
 
     private Containers() {}
 
@@ -490,12 +488,66 @@ final class Containers {
         }
     }
 
+    /** A string escape naming U+FFFD, the replacement character. */
+    private static final String REPLACEMENT_ESCAPE = "\\" + "ufffd";
+
+    /**
+     * {@code s} with every escape of an unpaired surrogate inside a string replaced by U+FFFD's, as Go's decoder reads
+     * one; the reader's strict mode refuses them, and a document the Go library accepts must not be refused here.
+     * Everything else, malformed or not, is left to the reader.
+     */
+    static String pairSurrogates(String s) {
+        StringBuilder b = new StringBuilder(s.length());
+        boolean inString = false;
+        for (int i = 0; i < s.length(); i++) {
+            char c = s.charAt(i);
+            if (c == '"') {
+                inString = !inString;
+            } else if (inString && c == '\\' && i + 1 < s.length()) {
+                int v = s.charAt(i + 1) == 'u' ? hex4(s, i + 2) : -1;
+                if (v >= 0 && Character.isSurrogate((char) v)) {
+                    int w = Character.isHighSurrogate((char) v) && s.startsWith("\\" + "u", i + 6)
+                            ? hex4(s, i + 8) : -1;
+                    if (w >= 0 && Character.isLowSurrogate((char) w)) {
+                        b.append(s, i, i + 12);
+                        i += 11;
+                    } else {
+                        b.append(REPLACEMENT_ESCAPE);
+                        i += 5;
+                    }
+                    continue;
+                }
+                b.append(c).append(s.charAt(++i)); // an escaped quote does not end the string
+                continue;
+            }
+            b.append(c);
+        }
+        return b.toString();
+    }
+
+    /** The four hex digits at {@code s[i:i+4]} as a number, or -1. */
+    private static int hex4(String s, int i) {
+        if (i + 4 > s.length()) {
+            return -1;
+        }
+        int v = 0;
+        for (int k = i; k < i + 4; k++) {
+            int d = Character.digit(s.charAt(k), 16);
+            if (d < 0 || s.charAt(k) > 'f') {
+                return -1;
+            }
+            v = v << 4 | d;
+        }
+        return v;
+    }
+
     /** Exactly one JSON value, numbers kept as written. */
     static JsonElement decode(String s) {
         try {
-            JsonReader r = new JsonReader(new StringReader(s));
+            JsonReader r = new JsonReader(new StringReader(pairSurrogates(s)));
             r.setStrictness(Strictness.STRICT);
-            JsonElement v = com.google.gson.internal.Streams.parse(r);
+            JsonElement v = JsonParser.parseReader(r); // keeps the reader's STRICT
+
             if (r.peek() != JsonToken.END_DOCUMENT) {
                 throw new JsonParseException("more than one JSON value");
             }
@@ -503,6 +555,124 @@ final class Containers {
         } catch (IOException | JsonParseException | IllegalStateException e) {
             throw jsonField("the document: " + e.getMessage());
         }
+    }
+
+    /**
+     * {@code v} as compact JSON, written as the Go library writes it ({@code encoding/json} with HTML escaping off), so
+     * both libraries produce the same bytes for the same document: object keys in sorted order (by UTF-8 bytes, which
+     * is code point order), numbers as they were written, the quote, the backslash and the control characters escaped
+     * (backspace, form feed, newline, carriage return and tab by their one-letter escapes, the others by four hex
+     * digits), U+2028 and U+2029 escaped, an unpaired surrogate (one the document named by its escape) as U+FFFD,
+     * everything else as it is. Iterative, so a deep document cannot overflow the stack.
+     */
+    static String encode(JsonElement v) {
+        StringBuilder b = new StringBuilder();
+        java.util.ArrayDeque<Frame> stack = new java.util.ArrayDeque<>();
+        open(b, stack, v);
+        while (!stack.isEmpty()) {
+            Frame f = stack.peek();
+            if (!f.items.hasNext()) {
+                b.append(f.object ? '}' : ']');
+                stack.pop();
+                continue;
+            }
+            if (!f.first) {
+                b.append(',');
+            }
+            f.first = false;
+            Object next = f.items.next();
+            if (next instanceof java.util.Map.Entry<?, ?> e) {
+                quote(b, (String) e.getKey());
+                b.append(':');
+                open(b, stack, (JsonElement) e.getValue());
+            } else {
+                open(b, stack, (JsonElement) next);
+            }
+        }
+        return b.toString();
+    }
+
+    /** An object's or array's members still to write. */
+    private static final class Frame {
+        final java.util.Iterator<?> items;
+        final boolean object;
+        boolean first = true;
+
+        Frame(java.util.Iterator<?> items, boolean object) {
+            this.items = items;
+            this.object = object;
+        }
+    }
+
+    /** Writes a scalar, or opens an object (its keys sorted) or an array on the stack. */
+    private static void open(StringBuilder b, java.util.ArrayDeque<Frame> stack, JsonElement v) {
+        if (v == null || v.isJsonNull()) {
+            b.append("null");
+        } else if (v.isJsonObject()) {
+            List<java.util.Map.Entry<String, JsonElement>> members = new ArrayList<>(v.getAsJsonObject().entrySet());
+            members.sort((x, y) -> compareCodePoints(x.getKey(), y.getKey()));
+            b.append('{');
+            stack.push(new Frame(members.iterator(), true));
+        } else if (v.isJsonArray()) {
+            b.append('[');
+            stack.push(new Frame(v.getAsJsonArray().iterator(), false));
+        } else {
+            JsonPrimitive p = v.getAsJsonPrimitive();
+            if (p.isString()) {
+                quote(b, p.getAsString());
+            } else if (p.isBoolean()) {
+                b.append(p.getAsBoolean());
+            } else {
+                b.append(p.getAsNumber()); // as written: the reader's LazilyParsedNumber
+            }
+        }
+    }
+
+    /** UTF-8 byte order: code point order, which UTF-16's (String.compareTo) is not above U+FFFF. */
+    static int compareCodePoints(String x, String y) {
+        int i = 0;
+        int j = 0;
+        while (i < x.length() && j < y.length()) {
+            int a = x.codePointAt(i);
+            int c = y.codePointAt(j);
+            if (a != c) {
+                return Integer.compare(a, c);
+            }
+            i += Character.charCount(a);
+            j += Character.charCount(c);
+        }
+        return Boolean.compare(i < x.length(), j < y.length());
+    }
+
+    private static void quote(StringBuilder b, String s) {
+        b.append('"');
+        for (int i = 0; i < s.length(); i++) {
+            char c = s.charAt(i);
+            switch (c) {
+                case '"' -> b.append("\\\"");
+                case '\\' -> b.append("\\\\");
+                case '\b' -> b.append("\\b");
+                case '\f' -> b.append("\\f");
+                case '\n' -> b.append("\\n");
+                case '\r' -> b.append("\\r");
+                case '\t' -> b.append("\\t");
+                case '\u2028' -> b.append("\\u2028");
+                case '\u2029' -> b.append("\\u2029");
+                default -> {
+                    if (c < 0x20) {
+                        b.append(String.format("\\u%04x", (int) c));
+                    } else if (Character.isHighSurrogate(c) && i + 1 < s.length()
+                            && Character.isLowSurrogate(s.charAt(i + 1))) {
+                        b.append(c).append(s.charAt(++i));
+                    } else if (Character.isSurrogate(c)) {
+                        b.append('\ufffd');
+                    } else {
+                        b.append(c);
+                    }
+                }
+            }
+        }
+        b.append('"');
     }
 
     static byte[] fieldAad(String recordId, String pointer, byte[] aad, String which) {
@@ -552,7 +722,7 @@ final class Containers {
                 if (isField(s.value())) {
                     throw jsonField("\"" + ptr + "\" is encrypted already");
                 }
-                data = Bytes.utf8(GSON.toJson(s.value()));
+                data = Bytes.utf8(encode(s.value()));
             } else {
                 if (!s.value().isJsonPrimitive() || !s.value().getAsJsonPrimitive().isString()) {
                     throw jsonField("\"" + ptr + "\" is not an encrypted field");
@@ -584,7 +754,7 @@ final class Containers {
             }
             slots.get(i).set().accept(x);
         }
-        return Bytes.utf8(GSON.toJson(root));
+        return Bytes.utf8(encode(root));
     }
 
     static boolean isField(JsonElement v) {

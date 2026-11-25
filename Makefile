@@ -168,17 +168,25 @@ check-proto-breaking: buf-check-version
 # java/harness with the Go toolchain, so they need Go too.
 MVNW            := ./mvnw -B -ntp
 
+# The JDK the Java targets use: JAVA_HOME when it is set; otherwise a JDK 21 macOS knows of (java_home), then
+# Homebrew's openjdk@21, which is not linked where java_home looks; otherwise the java on PATH. Evaluated only by the
+# Java targets.
+JDK_HOME = $(or $(JAVA_HOME),$(shell /usr/libexec/java_home -v 21 2>/dev/null),$(shell \
+  b=$$(brew --prefix openjdk@21 2>/dev/null) && test -d "$$b/libexec/openjdk.jdk/Contents/Home" && \
+  echo "$$b/libexec/openjdk.jdk/Contents/Home"))
+JAVA_ENV        = $(if $(JDK_HOME),JAVA_HOME="$(JDK_HOME)" PATH="$(JDK_HOME)/bin:$$PATH",)
+
 # The library and its unit tests, the conformance vectors, and the integration tests against the Go fake (harness).
 .PHONY: java-test
 java-test:
-	cd java && $(MVNW) verify
+	cd java && $(JAVA_ENV) $(MVNW) verify
 
 # The conformance kit (spec/vectors) through Go's own runner, on the Java adapter: 259 cases, none unsupported.
 .PHONY: java-conformance
 java-conformance:
-	cd java && $(MVNW) -q test-compile dependency:build-classpath -Dmdep.outputFile=target/classpath.txt \
+	cd java && $(JAVA_ENV) $(MVNW) -q test-compile dependency:build-classpath -Dmdep.outputFile=target/classpath.txt \
 	  -Dmdep.includeScope=test
-	GOFIPS140=$(GOFIPS140) go run ./java/harness conformance -- java -cp \
+	$(JAVA_ENV) GOFIPS140=$(GOFIPS140) go run ./java/harness conformance -- java -cp \
 	  "$(CURDIR)/java/target/test-classes:$(CURDIR)/java/target/classes:$$(cat java/target/classpath.txt)" \
 	  io.github.nnicora.cipheron.conformance.ConformanceAdapter
 

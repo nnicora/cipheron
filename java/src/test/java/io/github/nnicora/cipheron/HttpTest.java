@@ -49,6 +49,29 @@ class HttpTest {
     }
 
     @Test
+    void theSocketsConnectionsAreReusedAndBounded() throws Exception {
+        try (CipheronClient c = CipheronClient.builder(fake.httpSocket()).serverUid(fake.uid())
+                .transport(Transport.HTTP).connections(2).profileFingerprint("ledger", fake.fingerprint("ledger"))
+                .defaultTimeout(Duration.ofSeconds(20)).build()) {
+            for (int i = 0; i < 40; i++) {
+                assertArrayEquals(DATA, c.decrypt("ledger", c.encrypt("ledger", DATA)));
+            }
+            java.util.concurrent.ExecutorService pool = java.util.concurrent.Executors.newFixedThreadPool(12);
+            try {
+                List<java.util.concurrent.Future<byte[]>> calls = new java.util.ArrayList<>();
+                for (int i = 0; i < 48; i++) {
+                    calls.add(pool.submit(() -> c.decrypt("ledger", c.encrypt("ledger", DATA))));
+                }
+                for (java.util.concurrent.Future<byte[]> f : calls) {
+                    assertArrayEquals(DATA, f.get());
+                }
+            } finally {
+                pool.shutdownNow();
+            }
+        }
+    }
+
+    @Test
     void everyOperationWorksOverJson() {
         try (CipheronClient c = client()) {
             byte[] aad = "k".getBytes(StandardCharsets.UTF_8);

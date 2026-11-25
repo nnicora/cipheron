@@ -3,6 +3,7 @@ package io.github.nnicora.cipheron.internal.client;
 import io.github.nnicora.cipheron.AssociatedDataException;
 import io.github.nnicora.cipheron.BadResponseException;
 import io.github.nnicora.cipheron.BusyException;
+import io.github.nnicora.cipheron.CertificateRefusedException;
 import io.github.nnicora.cipheron.CipheronException;
 import io.github.nnicora.cipheron.ClosedException;
 import io.github.nnicora.cipheron.DeadlineExceededException;
@@ -103,6 +104,9 @@ public final class Dial {
     private static CipheronException mapFailure(Core core, Core.Call call, RpcFailure f) {
         if (f.getCause() instanceof GrpcRpc.ServerIdentityCause) {
             return new ServerIdentityException("cipheron: not the profile's cipheron: " + f.statusMessage(), f);
+        }
+        if (f.getCause() instanceof CertificateRefusals.Refusal) {
+            return new CertificateRefusedException("cipheron: permission denied: " + f.statusMessage(), f);
         }
         int code = f.code();
         boolean cut = code == RpcFailure.CANCELLED || code == RpcFailure.DEADLINE_EXCEEDED

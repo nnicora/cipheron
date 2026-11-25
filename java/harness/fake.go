@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"context"
 	"crypto/ed25519"
+	"crypto/tls"
 	"crypto/x509"
 	"encoding/hex"
 	"encoding/json"
@@ -12,9 +13,12 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"net"
+	"net/http"
 	"os"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -76,6 +80,7 @@ type ready struct {
 	Socket     string                  `json:"socket"`
 	HTTPSocket string                  `json:"httpSocket"`
 	TLS        string                  `json:"tls"`
+	HTTPTLS    string                  `json:"httpTls"`
 	CAFile     string                  `json:"caFile"`
 	ClientCert string                  `json:"clientCert"`
 	ClientKey  string                  `json:"clientKey"`
@@ -94,9 +99,10 @@ type profileReady struct {
 //
 //	harness fake -profiles ledger,people:derived,docs:wrapped
 //
-// on a gRPC unix socket, an HTTP unix socket and mutual TLS on 127.0.0.1, writes one JSON line (ready) on standard
-// output, then reads control commands on standard input, one JSON object per line, and answers each with one line
-// ({"ok":...} or {"error":"..."}). It exits when its standard input closes.
+// on a gRPC unix socket, an HTTP unix socket, gRPC over mutual TLS and the JSON API over mutual TLS (both on
+// 127.0.0.1), writes one JSON line (ready) on standard output, then reads control commands on standard input, one
+// JSON object per line, and answers each with one line ({"ok":...} or {"error":"..."}). It exits when its standard
+// input closes.
 func runFake(ctx context.Context, args []string) error {
 	fs := flag.NewFlagSet("fake", flag.ContinueOnError)
 	profiles := fs.String("profiles", "ledger", "profiles to serve: name[:shared|wrapped|derived], comma-separated")
@@ -126,10 +132,28 @@ func runFake(ctx context.Context, args []string) error {
 	ca := cipherontest.NewCA(tb, "cipheron test CA")
 	client := ca.Client(tb, clientID)
 	_, requestKeyFile := cipherontest.RequestKey(tb, dir, "request.key")
+	// While refuse is set, both TLS listeners refuse every client certificate in the handshake, as cipheron refuses
+	// an identity no profile lists: crypto/tls answers the failed VerifyConnection with a bad_certificate alert,
+	// which TLS 1.3 sends after the server's Finished (refuseCertificates).
+	var refuse atomic.Bool
+	verify := func(c *tls.Config) {
+		c.VerifyConnection = func(tls.ConnectionState) error {
+			if refuse.Load() {
+				return errNotListed
+			}
+			return nil
+		}
+	}
+	leaf := ca.Server(tb, serverID)
+	httpTLS, err := serveHTTPTLS(tb, fake, leaf, ca, verify)
+	if err != nil {
+		return err
+	}
 	r := ready{
 		Socket:     fake.ServeSocket(tb),
 		HTTPSocket: fake.ServeHTTPSocket(tb),
-		TLS:        fake.ServeTLS(tb, ca.Server(tb, serverID), ca),
+		TLS:        fake.ServeTLSConfig(tb, leaf, ca, verify),
+		HTTPTLS:    httpTLS,
 		CAFile:     cipherontest.Write(tb, dir, "ca.pem", ca.PEM, 0o644),
 		ClientCert: cipherontest.Write(tb, dir, "client.pem", client.ChainPEM, 0o644),
 		ClientKey:  cipherontest.Write(tb, dir, "client.key", client.KeyPEM, 0o600),
@@ -145,7 +169,43 @@ func runFake(ctx context.Context, args []string) error {
 	if err := out.Encode(r); err != nil {
 		return err
 	}
-	return control(ctx, fake, out, os.Stdin)
+	return control(ctx, &harness{fake: fake, refuse: &refuse}, out, os.Stdin)
+}
+
+var errNotListed = errors.New("no profile lists the identity")
+
+// serveHTTPTLS serves the fake's JSON API over mutual TLS 1.3 on 127.0.0.1, as cipheron's network listener serves
+// it to a client that offers ALPN http/1.1: the server presents leaf and requires a client certificate issued by
+// clientCA. It returns the address.
+func serveHTTPTLS(tb *shim, fake *cipherontest.Server, leaf *cipherontest.Leaf, clientCA *cipherontest.CA,
+	configure func(*tls.Config),
+) (string, error) {
+	pair, err := tls.X509KeyPair(leaf.ChainPEM, leaf.KeyPEM)
+	if err != nil {
+		return "", err
+	}
+	cfg := &tls.Config{
+		Certificates: []tls.Certificate{pair},
+		ClientAuth:   tls.RequireAndVerifyClientCert,
+		ClientCAs:    clientCA.Pool,
+		MinVersion:   tls.VersionTLS13,
+		NextProtos:   []string{"http/1.1"},
+	}
+	configure(cfg)
+	l, err := (&net.ListenConfig{}).Listen(context.Background(), "tcp", "127.0.0.1:0")
+	if err != nil {
+		return "", err
+	}
+	hs := &http.Server{Handler: fake.HTTPHandler(tb), TLSConfig: cfg, ReadHeaderTimeout: 10 * time.Second}
+	go func() { _ = hs.ServeTLS(l, "", "") }()
+	tb.Cleanup(func() { _ = hs.Close() })
+	return l.Addr().String(), nil
+}
+
+// harness is what the control commands act on: the fake, and the TLS listeners' refusal switch.
+type harness struct {
+	fake   *cipherontest.Server
+	refuse *atomic.Bool
 }
 
 func parseProfiles(s string) (names, kinds []string, err error) {
@@ -177,7 +237,7 @@ type command struct {
 	N       int64    `json:"n,omitempty"`
 }
 
-func control(ctx context.Context, fake *cipherontest.Server, out *json.Encoder, in io.Reader) error {
+func control(ctx context.Context, h *harness, out *json.Encoder, in io.Reader) error {
 	sc := bufio.NewScanner(in)
 	sc.Buffer(make([]byte, 0, 64<<10), 1<<20)
 	for sc.Scan() {
@@ -191,7 +251,7 @@ func control(ctx context.Context, fake *cipherontest.Server, out *json.Encoder, 
 			}
 			continue
 		}
-		result, err := apply(fake, c)
+		result, err := h.apply(c)
 		if err != nil {
 			if err := out.Encode(map[string]string{"error": err.Error()}); err != nil {
 				return err
@@ -228,8 +288,11 @@ var faults = map[string]cipherontest.Fault{
 	"Overloaded": cipherontest.Overloaded, "ProfileSealed": cipherontest.ProfileSealed,
 }
 
-func apply(fake *cipherontest.Server, c command) (any, error) {
+func (h *harness) apply(c command) (any, error) {
+	fake := h.fake
 	switch c.Op {
+	case "refuseCertificates":
+		h.refuse.Store(c.N != 0)
 	case "setMode":
 		m, ok := modes[c.Mode]
 		if !ok {

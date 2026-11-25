@@ -87,6 +87,23 @@ final class FakeServer implements AutoCloseable {
         return ready.get("tls").getAsString();
     }
 
+    /** The JSON API over mutual TLS. */
+    String httpTls() {
+        return ready.get("httpTls").getAsString();
+    }
+
+    String serverId() {
+        return ready.get("serverId").getAsString();
+    }
+
+    /** Makes both TLS listeners refuse every client certificate in the handshake (or admit them again). */
+    void refuseCertificates(boolean refuse) throws IOException {
+        JsonObject c = new JsonObject();
+        c.addProperty("op", "refuseCertificates");
+        c.addProperty("n", refuse ? 1 : 0);
+        send(c);
+    }
+
     Path file(String name) {
         return Path.of(ready.get(name).getAsString());
     }

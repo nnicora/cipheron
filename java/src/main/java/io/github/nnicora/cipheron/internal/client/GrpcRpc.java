@@ -5,18 +5,19 @@ import com.google.protobuf.InvalidProtocolBufferException;
 import com.google.protobuf.Message;
 import com.google.rpc.ErrorInfo;
 import com.google.rpc.RetryInfo;
+import io.github.nnicora.cipheron.internal.wire.Refusals;
 import io.grpc.CallOptions;
 import io.grpc.Channel;
 import io.grpc.ClientCall;
 import io.grpc.ClientInterceptor;
 import io.grpc.ConnectivityState;
+import io.grpc.Context;
 import io.grpc.ForwardingClientCall;
 import io.grpc.ManagedChannel;
 import io.grpc.Metadata;
 import io.grpc.MethodDescriptor;
 import io.grpc.Status;
 import io.grpc.StatusRuntimeException;
-import io.grpc.netty.GrpcSslContexts;
 import io.grpc.netty.NettyChannelBuilder;
 import io.grpc.protobuf.StatusProto;
 import io.grpc.stub.ClientCalls;
@@ -24,26 +25,34 @@ import io.netty.channel.EventLoopGroup;
 import io.netty.channel.MultiThreadIoEventLoopGroup;
 import io.netty.channel.nio.NioIoHandler;
 import io.netty.channel.socket.nio.NioDomainSocketChannel;
+import io.netty.handler.codec.http2.Http2SecurityUtil;
+import io.netty.handler.ssl.ApplicationProtocolConfig;
+import io.netty.handler.ssl.ApplicationProtocolNames;
+import io.netty.handler.ssl.ClientAuth;
+import io.netty.handler.ssl.JdkSslContext;
 import io.netty.handler.ssl.SslContext;
-import io.netty.handler.ssl.SslContextBuilder;
-import io.netty.handler.ssl.SslProvider;
+import io.netty.handler.ssl.SupportedCipherSuiteFilter;
 
 import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.net.StandardProtocolFamily;
 import java.net.UnixDomainSocketAddress;
 import java.nio.channels.SocketChannel;
+import java.security.GeneralSecurityException;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.concurrent.TimeUnit;
 
-import javax.net.ssl.SSLException;
+import javax.net.ssl.KeyManager;
+import javax.net.ssl.SSLContext;
+import javax.net.ssl.TrustManager;
 
 /**
  * One gRPC connection (a channel) to cipheron, over the unix socket (NIO on the JDK socket, with the server's uid checked
  * on the connection itself) or mutual TLS. Every request declares its size ({@code cipheron-request-bytes}) and carries
  * its request id ({@code x-request-id}); nothing is compressed; calls wait for a connection until their deadline,
- * unless the last attempt was an identity refusal ({@code internal/client/dial.go}).
+ * unless the last attempt was an identity refusal ({@code internal/client/dial.go}); cipheron refusing this client's
+ * certificate ends the calls on the connection at once ({@link CertificateRefusals}).
  */
 final class GrpcRpc implements Rpc {
     static final Metadata.Key<String> REQUEST_BYTES =
@@ -60,12 +69,15 @@ final class GrpcRpc implements Rpc {
     private final ManagedChannel channel;
     private final EventLoopGroup group;
     private final IdentityState id;
+    private final CertificateRefusals refusals;
     private final int maxMessage;
 
-    private GrpcRpc(ManagedChannel channel, EventLoopGroup group, IdentityState id, int maxMessage) {
+    private GrpcRpc(ManagedChannel channel, EventLoopGroup group, IdentityState id, CertificateRefusals refusals,
+            int maxMessage) {
         this.channel = channel;
         this.group = group;
         this.id = id;
+        this.refusals = refusals;
         this.maxMessage = maxMessage;
     }
 
@@ -91,30 +103,46 @@ final class GrpcRpc implements Rpc {
             }
             return ch;
         });
-        return new GrpcRpc(b.build(), group, id, maxMessage);
+        return new GrpcRpc(b.build(), group, id, null, maxMessage);
     }
 
     /** A connection over mutual TLS to {@code authority}. */
     static GrpcRpc network(String authority, Tls.FileKeyManager keys, Tls.ServerTrust trust, IdentityState id,
             int maxMessage) {
-        SslContext ssl;
+        CertificateRefusals refusals = new CertificateRefusals();
+        SSLContext jdk;
         try {
-            ssl = GrpcSslContexts.configure(SslContextBuilder.forClient(), SslProvider.JDK).keyManager(keys)
-                    .trustManager(trust).protocols("TLSv1.3").build();
-        } catch (SSLException e) {
+            jdk = SSLContext.getInstance("TLSv1.3");
+            jdk.init(new KeyManager[] {keys}, new TrustManager[] {trust}, null);
+        } catch (GeneralSecurityException e) {
             throw new IllegalStateException("cipheron: TLS: " + e.getMessage(), e);
         }
+        // TLS 1.3 only, ALPN h2, HTTP/2's cipher suites: what GrpcSslContexts configures for the JDK provider, on an
+        // SSLContext whose engines watch for cipheron's refusal of this client's certificate.
+        SslContext ssl = new JdkSslContext(CertificateRefusals.watching(jdk, refusals), true, Http2SecurityUtil.CIPHERS,
+                SupportedCipherSuiteFilter.INSTANCE,
+                new ApplicationProtocolConfig(ApplicationProtocolConfig.Protocol.ALPN,
+                        ApplicationProtocolConfig.SelectorFailureBehavior.NO_ADVERTISE,
+                        ApplicationProtocolConfig.SelectedListenerFailureBehavior.ACCEPT,
+                        ApplicationProtocolNames.HTTP_2),
+                ClientAuth.NONE, new String[] {"TLSv1.3"}, false);
         ManagedChannel ch = NettyChannelBuilder.forTarget(authority).sslContext(ssl).maxInboundMessageSize(maxMessage)
                 .flowControlWindow(STREAM_WINDOW).keepAliveTime(KEEPALIVE_TIME.toSeconds(), TimeUnit.SECONDS)
                 .keepAliveTimeout(KEEPALIVE_TIMEOUT.toSeconds(), TimeUnit.SECONDS).keepAliveWithoutCalls(false)
                 .intercept(new Declare()).build();
-        return new GrpcRpc(ch, null, id, maxMessage);
+        return new GrpcRpc(ch, null, id, refusals, maxMessage);
     }
 
     @Override
     public <Q extends Message, R extends Message> R call(Op<Q, R> op, Q request, String requestId, Instant deadline)
             throws RpcFailure {
         IdentityState.Call c = id.begin();
+        CertificateRefusals.Call r = refusals == null ? null : refusals.begin(c.context());
+        Context.CancellableContext ctx = r == null ? c.context() : r.context();
+        if (r != null && r.refused()) {
+            // The last attempt was refused: a fresh one now, not when the backoff the refusals grew ends.
+            channel.resetConnectBackoff();
+        }
         try {
             CallOptions opts = CallOptions.DEFAULT.withOption(REQUEST_ID_OPTION, requestId)
                     .withOption(REQUEST_SIZE_OPTION, request.getSerializedSize())
@@ -125,21 +153,33 @@ final class GrpcRpc implements Rpc {
             long nanos = Duration.between(Instant.now(), deadline).toNanos();
             opts = opts.withDeadlineAfter(Math.max(nanos, 1), TimeUnit.NANOSECONDS);
             CallOptions o = opts;
-            return c.context().call(() -> ClientCalls.blockingUnaryCall(channel, op.method(), o, request));
+            return ctx.call(() -> ClientCalls.blockingUnaryCall(channel, op.method(), o, request));
         } catch (StatusRuntimeException e) {
-            Throwable cause = c.context().cancellationCause();
+            Throwable cause = ctx.cancellationCause();
             if (cause instanceof IdentityState.IdentityFailure f) {
                 throw identity(f.getCause(), requestId);
             }
+            CertificateRefusals.Refusal refused = CertificateRefusals.find(cause != null ? cause : e);
+            if (refused != null) {
+                throw certificateRefused(refused, requestId);
+            }
             throw failure(e, requestId);
         } catch (Exception e) {
-            if (e instanceof RuntimeException r) {
-                throw r;
+            if (e instanceof RuntimeException re) {
+                throw re;
             }
             throw new IllegalStateException(e);
         } finally {
+            if (r != null) {
+                r.done().run();
+            }
             c.done().run();
         }
+    }
+
+    /** The failure a call answers when cipheron refused this client's certificate: PERMISSION_DENIED. */
+    static RpcFailure certificateRefused(CertificateRefusals.Refusal r, String requestId) {
+        return new RpcFailure(Refusals.PERMISSION_DENIED, r.getMessage(), null, null, null, false, false, requestId, r);
     }
 
     /** The failure a call answers when the server's identity was refused. */
