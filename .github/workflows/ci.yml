@@ -1,34 +1,68 @@
 name: CI
 
 # ACTIONS ARE PINNED BY COMMIT SHA, not tag: a tag is a moving pointer its owner can repoint at any commit. The trailing
-# comment is the human-readable version. Re-resolve rather than hand-edit, e.g.
-# `gh api repos/actions/checkout/commits/v7.0.1 --jq .sha`.
+# comment is the release the SHA is the commit of (the action's latest release when it was pinned). Re-resolve rather
+# than hand-edit: `gh api repos/<owner>/<repo>/git/ref/tags/<tag>`, and for an annotated tag (object type "tag")
+# `gh api repos/<owner>/<repo>/git/tags/<sha> --jq .object.sha`.
+#
+# THE TOKEN. Nothing here writes: the workflow grants nothing (`permissions: {}`) and each job takes `contents: read`
+# for its checkout. Every checkout sets `persist-credentials: false`, so no job leaves the token in .git/config for a
+# later step (or a tool it runs) to read; the repository is public, so the one `git fetch` (proto) needs none.
+#
+# HARDEN-RUNNER is every job's first step, in audit mode: it records each job's network egress and process activity
+# (on the run's summary page) and blocks nothing. Moving a job to `egress-policy: block` takes the allow-list its
+# audit shows.
+#
+# release.yml calls this workflow (`workflow_call`) on the tagged commit before it publishes a release; `inputs.ref`
+# is that commit, and is empty on every other trigger, where the checkout takes the event's own commit.
 
 on:
   push:
     branches: [main]
   pull_request:
+  merge_group:
   workflow_dispatch:
+  workflow_call:
+    inputs:
+      ref:
+        description: The commit to check out and test (release.yml passes the tagged commit).
+        type: string
+        required: false
+        default: ""
 
-permissions:
-  contents: read
+permissions: {}
 
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
+defaults:
+  run:
+    # `bash --noprofile --norc -eo pipefail {0}`: a failing command anywhere in a pipeline fails the step.
+    shell: bash
+
 env:
   # The FIPS 140-3 Go Cryptographic Module the tests run under, as releases are built (the Makefile's GOFIPS140).
   GOFIPS140: v1.26.0
+  # setup-go installs go.mod's Go; never let the go command download another toolchain behind it.
+  GOTOOLCHAIN: local
 
 jobs:
   build-test:
     name: build / vet / test
     runs-on: ubuntu-24.04
     timeout-minutes: 30
+    permissions:
+      contents: read
     steps:
+      - uses: step-security/harden-runner@aebdcf6156ab6691adf63218240e476564a1ed4c # v2.23.0
+        with:
+          egress-policy: audit
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          ref: ${{ inputs.ref }}
+          persist-credentials: false
+      - uses: actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5 # v7.1.0
         with:
           go-version-file: go.mod
           cache: true
@@ -60,9 +94,17 @@ jobs:
     name: race detector
     runs-on: ubuntu-24.04
     timeout-minutes: 45
+    permissions:
+      contents: read
     steps:
+      - uses: step-security/harden-runner@aebdcf6156ab6691adf63218240e476564a1ed4c # v2.23.0
+        with:
+          egress-policy: audit
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          ref: ${{ inputs.ref }}
+          persist-credentials: false
+      - uses: actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5 # v7.1.0
         with:
           go-version-file: go.mod
           cache: true
@@ -73,9 +115,17 @@ jobs:
     name: protocol checks
     runs-on: ubuntu-24.04
     timeout-minutes: 10
+    permissions:
+      contents: read
     steps:
+      - uses: step-security/harden-runner@aebdcf6156ab6691adf63218240e476564a1ed4c # v2.23.0
+        with:
+          egress-policy: audit
       # The fixture guard compares the working tree with HEAD (the checkout's one commit is enough).
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.ref }}
+          persist-credentials: false
       - name: The frozen fixtures are exactly what is committed
         run: make check-golden-fixtures
       - name: Every label is built from the purpose table
@@ -87,9 +137,17 @@ jobs:
     name: lint
     runs-on: ubuntu-24.04
     timeout-minutes: 20
+    permissions:
+      contents: read
     steps:
+      - uses: step-security/harden-runner@aebdcf6156ab6691adf63218240e476564a1ed4c # v2.23.0
+        with:
+          egress-policy: audit
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          ref: ${{ inputs.ref }}
+          persist-credentials: false
+      - uses: actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5 # v7.1.0
         with:
           go-version-file: go.mod
           cache: true
@@ -114,6 +172,8 @@ jobs:
     name: proto lint / format / breaking
     runs-on: ubuntu-24.04
     timeout-minutes: 15
+    permissions:
+      contents: read
     env:
       # Pinned by version and by the module's content hash, asserted against what the installed binary records
       # (`go version -m`): the hash the Go checksum database holds for github.com/bufbuild/buf v1.73.0. The
@@ -121,8 +181,14 @@ jobs:
       BUF_VERSION: v1.73.0
       BUF_MODULE_HASH: h1:fDNKlxaf+PYi20dmVM7Yt3kOfXEhwrgKDLMNZFjztDs=
     steps:
+      - uses: step-security/harden-runner@aebdcf6156ab6691adf63218240e476564a1ed4c # v2.23.0
+        with:
+          egress-policy: audit
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          ref: ${{ inputs.ref }}
+          persist-credentials: false
+      - uses: actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5 # v7.1.0
         with:
           go-version-file: go.mod
           cache: true
@@ -143,12 +209,138 @@ jobs:
         run: make lint-proto
 
       # A pull request's API against its base: the base tip is fetched as a local branch (it is not reachable from
-      # the merge commit within a shallow checkout). A base without proto/v1 has nothing to break.
+      # the merge commit within a shallow checkout). The repository is public, so the fetch needs no credentials. A
+      # base without proto/v1 has nothing to break.
       - name: buf breaking against the base branch
         if: github.event_name == 'pull_request'
         env:
           BASE_REF: ${{ github.base_ref }}
         run: |
-          set -euo pipefail
           git fetch --no-tags --depth=1 origin "+refs/heads/${BASE_REF}:refs/heads/buf-base"
           make check-proto-breaking BUF_BASE=buf-base
+
+  # The known vulnerabilities in what the module calls, through its dependencies and the standard library.
+  # govulncheck is pinned in the two forms a Go tool has, as buf is above: the VERSION, and the module's CONTENT HASH
+  # (the one the Go checksum database holds for golang.org/x/vuln v1.8.0), asserted against what the installed binary
+  # records (`go version -m`), so a re-pointed tag or a proxy serving other bytes fails before the binary runs. To bump:
+  #   go install golang.org/x/vuln/cmd/govulncheck@<new> &&
+  #     go version -m "$(go env GOPATH)/bin/govulncheck" | awk '$1 == "mod" && $2 == "golang.org/x/vuln"'
+  # and compare the hash with `curl -s https://sum.golang.org/lookup/golang.org/x/vuln@<new>`.
+  govulncheck:
+    name: govulncheck
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    env:
+      GOVULNCHECK_VERSION: v1.8.0
+      GOVULNCHECK_MODULE_HASH: h1:clG4qBU6zH5VKjti8n5j8BBuYzoSha392xXMkXS351U=
+    steps:
+      - uses: step-security/harden-runner@aebdcf6156ab6691adf63218240e476564a1ed4c # v2.23.0
+        with:
+          egress-policy: audit
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.ref }}
+          persist-credentials: false
+      - uses: actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5 # v7.1.0
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Install govulncheck (pinned by version and by content hash)
+        run: |
+          set -euo pipefail
+          go install "golang.org/x/vuln/cmd/govulncheck@${GOVULNCHECK_VERSION}"
+          BIN="$(go env GOPATH)/bin/govulncheck"
+          test -x "${BIN}"
+          GOT="$(go version -m "${BIN}" | awk '$1 == "mod" && $2 == "golang.org/x/vuln" { print $3 " " $4 }')"
+          if [ "${GOT}" != "${GOVULNCHECK_VERSION} ${GOVULNCHECK_MODULE_HASH}" ]; then
+            echo "::error::the installed govulncheck's module is '${GOT}', expected '${GOVULNCHECK_VERSION} ${GOVULNCHECK_MODULE_HASH}'"
+            exit 1
+          fi
+
+      # Under the FIPS module the tests and releases are built with (GOFIPS140 adds its build tag), so the analysis
+      # sees the build that ships.
+      - name: govulncheck ./...
+        env:
+          GOFIPS140: v1.26.0
+        run: '"$(go env GOPATH)/bin/govulncheck" ./...'
+
+  # The workflows themselves, with two linters, each pinned to bytes that cannot be moved after the fact:
+  #   - actionlint (syntax, expressions, types, runner labels): by VERSION and by the module's CONTENT HASH, the one
+  #     the Go checksum database holds for github.com/rhysd/actionlint v1.7.12 (the latest release when pinned),
+  #     asserted against `go version -m` of the installed binary, as govulncheck above. To bump, as govulncheck, with
+  #     `curl -s https://sum.golang.org/lookup/github.com/rhysd/actionlint@<new>`.
+  #   - zizmor (security: template injection, credential persistence, excessive permissions, unpinned or impostor
+  #     action commits, cache poisoning, dangerous triggers, Dependabot settings): from PyPI, by VERSION and by the
+  #     SHA-256 of the one wheel this runner installs (zizmor-<v>-py3-none-manylinux_2_28_x86_64.whl), with pip's
+  #     --require-hashes, --only-binary and --no-deps (the wheel is a single static binary with no dependencies). A
+  #     hash-pinned wheel is the most reproducible of the options: the official zizmor-action runs a container image
+  #     pulled by tag, which pins nothing, and `pipx run zizmor==<v>` checks no hash. To bump, take the wheel's sha256
+  #     from https://pypi.org/pypi/zizmor/<new>/json (`.urls[] | select(.filename | endswith("manylinux_2_28_x86_64.whl"))`).
+  #     It runs over the whole repository (workflows and .github/dependabot.yml), with the job's read-only token so the
+  #     online audits (impostor commits, ref confusion, known-vulnerable actions) run too. Any finding fails the job;
+  #     .github/zizmor.yml holds the reviewed exceptions, each with its reason.
+  # No action wraps either tool: it would be one more third party's SHA to trust, for binaries pinned by content here.
+  workflow-lint:
+    name: workflow lint (actionlint, zizmor)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    env:
+      ACTIONLINT_VERSION: v1.7.12
+      ACTIONLINT_MODULE_HASH: h1:vQ4GeJN86C0QH+gTUQcs8McmK62OLT3kmakPMtEWYnY=
+      ZIZMOR_VERSION: 1.33.1
+      ZIZMOR_WHEEL_SHA256: 49eb92a95347e7da58c3123e4d5b297dbb6fe8ecc328e9db68df14c08e25e151
+    steps:
+      - uses: step-security/harden-runner@aebdcf6156ab6691adf63218240e476564a1ed4c # v2.23.0
+        with:
+          egress-policy: audit
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.ref }}
+          persist-credentials: false
+      - uses: actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5 # v7.1.0
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Install actionlint (pinned by version and by content hash)
+        run: |
+          set -euo pipefail
+          go install "github.com/rhysd/actionlint/cmd/actionlint@${ACTIONLINT_VERSION}"
+          BIN="$(go env GOPATH)/bin/actionlint"
+          test -x "${BIN}"
+          GOT="$(go version -m "${BIN}" | awk '$1 == "mod" && $2 == "github.com/rhysd/actionlint" { print $3 " " $4 }')"
+          if [ "${GOT}" != "${ACTIONLINT_VERSION} ${ACTIONLINT_MODULE_HASH}" ]; then
+            echo "::error::the installed actionlint's module is '${GOT}', expected '${ACTIONLINT_VERSION} ${ACTIONLINT_MODULE_HASH}'"
+            exit 1
+          fi
+
+      # Shellcheck and pyflakes are off (`-shellcheck= -pyflakes=`): actionlint runs them over every `run:` when they
+      # are installed, and the runner image has shellcheck, so the result would depend on a tool these workflows were
+      # never checked with (they are at zero findings with both off). Drop the flags once a run with shellcheck has
+      # been read and its findings fixed.
+      - name: actionlint
+        run: '"$(go env GOPATH)/bin/actionlint" -color -shellcheck= -pyflakes='
+
+      - name: Install zizmor (pinned by version and by wheel hash)
+        run: |
+          set -euo pipefail
+          VENV="${RUNNER_TEMP}/zizmor"
+          python3 -m venv "${VENV}"
+          printf 'zizmor==%s --hash=sha256:%s\n' "${ZIZMOR_VERSION}" "${ZIZMOR_WHEEL_SHA256}" > "${RUNNER_TEMP}/zizmor-requirements.txt"
+          "${VENV}/bin/pip" install --disable-pip-version-check --no-input --require-hashes --only-binary=:all: --no-deps \
+            -r "${RUNNER_TEMP}/zizmor-requirements.txt"
+          GOT="$("${VENV}/bin/zizmor" --version)"
+          if [ "${GOT}" != "zizmor ${ZIZMOR_VERSION}" ]; then
+            echo "::error::the installed zizmor is '${GOT}', expected 'zizmor ${ZIZMOR_VERSION}'"
+            exit 1
+          fi
+
+      - name: zizmor
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: '"${RUNNER_TEMP}/zizmor/bin/zizmor" --format=github .'

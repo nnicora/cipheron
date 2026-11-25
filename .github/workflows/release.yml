@@ -1,0 +1,238 @@
+name: Release
+
+# Publishes a release of github.com/nnicora/cipheron from a pushed `vX.Y.Z` tag:
+#   1. verify   - the tag is a plain semantic version (vMAJOR.MINOR.PATCH, no pre-release or build suffix) and its
+#                 commit is reachable from origin/main: nothing is released that main does not hold;
+#   2. ci       - the whole CI workflow (ci.yml, through `workflow_call`) on the tagged commit;
+#   3. release  - the GitHub release for the tag, created or updated with `gh release` (title = the tag; notes = the
+#                 `go get` line and the tag's CHANGELOG.md section, when there is one);
+#   4. proxy    - the Go module proxy (proxy.golang.org) serves the version, and serves it as the tagged commit, and
+#                 the checksum database records it.
+# `workflow_dispatch` re-runs it for an existing tag (to republish a release or after a proxy outage): run it from main
+# with the tag as the input. Every step reads the tag's commit, never the commit the dispatch ran from.
+#
+# Actions are pinned by commit SHA, with the release it is the commit of; see ci.yml for how to re-resolve them. The
+# workflow grants nothing; each job takes what it needs (`contents: write` on the release job alone).
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: The existing tag to release (vX.Y.Z).
+        type: string
+        required: true
+
+permissions: {}
+
+# One run per tag, and never cancelled half-way: a second run for the same tag waits for the first.
+concurrency:
+  group: release-${{ inputs.tag && format('refs/tags/{0}', inputs.tag) || github.ref }}
+  cancel-in-progress: false
+
+defaults:
+  run:
+    shell: bash
+
+env:
+  GOTOOLCHAIN: local
+
+jobs:
+  verify:
+    name: verify the tag
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    outputs:
+      tag: ${{ steps.tag.outputs.tag }}
+      sha: ${{ steps.reachable.outputs.sha }}
+    steps:
+      - uses: step-security/harden-runner@aebdcf6156ab6691adf63218240e476564a1ed4c # v2.23.0
+        with:
+          egress-policy: audit
+
+      - name: The tag is vMAJOR.MINOR.PATCH
+        id: tag
+        env:
+          EVENT: ${{ github.event_name }}
+          INPUT_TAG: ${{ inputs.tag }}
+          REF_TYPE: ${{ github.ref_type }}
+          REF_NAME: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          if [ "${EVENT}" = workflow_dispatch ]; then
+            TAG="${INPUT_TAG}"
+          elif [ "${REF_TYPE}" = tag ]; then
+            TAG="${REF_NAME}"
+          else
+            echo "::error::not a tag push (${EVENT} on a ${REF_TYPE})"
+            exit 1
+          fi
+          if ! [[ "${TAG}" =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]; then
+            echo "::error::'${TAG}' is not a release tag vMAJOR.MINOR.PATCH"
+            exit 1
+          fi
+          echo "tag=${TAG}" >> "${GITHUB_OUTPUT}"
+
+      # The full history and every branch and tag, to ask whether main holds the tag's commit.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: refs/tags/${{ steps.tag.outputs.tag }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: The tag's commit is on main
+        id: reachable
+        env:
+          TAG: ${{ steps.tag.outputs.tag }}
+        run: |
+          set -euo pipefail
+          SHA="$(git rev-parse --verify "refs/tags/${TAG}^{commit}")"
+          git rev-parse --verify refs/remotes/origin/main >/dev/null
+          if ! git merge-base --is-ancestor "${SHA}" refs/remotes/origin/main; then
+            echo "::error::${TAG} (${SHA}) is not reachable from origin/main"
+            exit 1
+          fi
+          echo "${TAG} is ${SHA}, on origin/main"
+          echo "sha=${SHA}" >> "${GITHUB_OUTPUT}"
+
+  ci:
+    name: CI
+    needs: verify
+    permissions:
+      contents: read
+    uses: ./.github/workflows/ci.yml
+    with:
+      ref: ${{ needs.verify.outputs.sha }}
+
+  release:
+    name: GitHub release
+    needs: [verify, ci]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: write # create or edit the tag's GitHub release
+    steps:
+      - uses: step-security/harden-runner@aebdcf6156ab6691adf63218240e476564a1ed4c # v2.23.0
+        with:
+          egress-policy: audit
+
+      # CHANGELOG.md as the tag holds it.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.verify.outputs.sha }}
+          persist-credentials: false
+
+      # The section is the one headed `## vX.Y.Z`, `## X.Y.Z` or `## [X.Y.Z]` (anything after it on the heading line,
+      # such as a date, is allowed), up to the next `## ` heading.
+      - name: Release notes
+        env:
+          TAG: ${{ needs.verify.outputs.tag }}
+          NOTES: ${{ runner.temp }}/notes.md
+        run: |
+          set -euo pipefail
+          SECTION=""
+          if [ -f CHANGELOG.md ]; then
+            SECTION="$(awk -v v="${TAG#v}" '
+              /^## / {
+                if (found) exit
+                split($0, w, " ")
+                if (w[2] == "v" v || w[2] == v || w[2] == "[" v "]" || w[2] == "[v" v "]") { found = 1; next }
+              }
+              found { print }
+            ' CHANGELOG.md)"
+          fi
+          if [ -z "${SECTION//[[:space:]]/}" ]; then
+            echo "::warning::CHANGELOG.md has no section for ${TAG}"
+            SECTION="CHANGELOG.md has no section for ${TAG}."
+          fi
+          {
+            echo '```sh'
+            echo "go get github.com/nnicora/cipheron@${TAG}"
+            echo '```'
+            echo
+            printf '%s\n' "${SECTION}"
+          } > "${NOTES}"
+          cat "${NOTES}"
+
+      - name: Create or update the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          TAG: ${{ needs.verify.outputs.tag }}
+          NOTES: ${{ runner.temp }}/notes.md
+        run: |
+          set -euo pipefail
+          if gh release view "${TAG}" >/dev/null 2>&1; then
+            gh release edit "${TAG}" --title "${TAG}" --notes-file "${NOTES}"
+            echo "updated the release ${TAG}"
+          else
+            gh release create "${TAG}" --verify-tag --title "${TAG}" --notes-file "${NOTES}"
+            echo "created the release ${TAG}"
+          fi
+
+  proxy:
+    name: the module proxy serves it
+    needs: [verify, release]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    steps:
+      - uses: step-security/harden-runner@aebdcf6156ab6691adf63218240e476564a1ed4c # v2.23.0
+        with:
+          egress-policy: audit
+
+      # Only for go.mod's Go version: the go command below runs outside any module.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.verify.outputs.sha }}
+          persist-credentials: false
+      - uses: actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5 # v7.1.0
+        with:
+          go-version-file: go.mod
+          cache: false
+
+      # The first request makes the proxy fetch the tag; it can take a while to answer, so a few tries, 30s apart.
+      # Then the version's origin must be the tagged commit (the proxy records the commit it fetched), and
+      # `go mod download` checks the module's hash against the checksum database (sum.golang.org).
+      - name: proxy.golang.org serves the tag, as the tagged commit
+        working-directory: ${{ runner.temp }}
+        env:
+          TAG: ${{ needs.verify.outputs.tag }}
+          SHA: ${{ needs.verify.outputs.sha }}
+          GOPROXY: https://proxy.golang.org
+          GOFLAGS: ""
+          GOSUMDB: sum.golang.org
+          GOPRIVATE: ""
+          GONOSUMDB: ""
+        run: |
+          set -euo pipefail
+          MOD="github.com/nnicora/cipheron"
+          for attempt in 1 2 3 4 5 6 7 8 9 10; do
+            if go list -m -json "${MOD}@${TAG}" > info.json 2> err.txt; then
+              break
+            fi
+            echo "attempt ${attempt}: $(cat err.txt)"
+            if [ "${attempt}" = 10 ]; then
+              echo "::error::proxy.golang.org does not serve ${MOD}@${TAG}"
+              exit 1
+            fi
+            sleep 30
+          done
+          cat info.json
+          GOT_VERSION="$(jq -r .Version info.json)"
+          if [ "${GOT_VERSION}" != "${TAG}" ]; then
+            echo "::error::the proxy answered version '${GOT_VERSION}', expected '${TAG}'"
+            exit 1
+          fi
+          GOT_HASH="$(jq -r '.Origin.Hash // empty' info.json)"
+          if [ -z "${GOT_HASH}" ]; then
+            echo "::warning::the proxy's answer records no origin commit; not compared with ${SHA}"
+          elif [ "${GOT_HASH}" != "${SHA}" ]; then
+            echo "::error::the proxy serves ${TAG} as commit ${GOT_HASH}, the tag is ${SHA}"
+            exit 1
+          fi
+          go mod download -json "${MOD}@${TAG}" | jq '{Path, Version, Sum, GoModSum}'

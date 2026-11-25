@@ -1,0 +1,52 @@
+name: Scorecard
+
+# OpenSSF Scorecard: the repository's supply-chain practices (branch protection, pinned dependencies, token
+# permissions, ...), scored on every push to main, weekly, and when branch protection changes. The results are
+# published to the Scorecard API (publish_results, which signs them with this job's OIDC token) and uploaded to the
+# Security tab as SARIF.
+#
+# Scorecard verifies a publishing workflow before it accepts the results: no workflow-level `env` or `defaults`, no
+# write permission at the workflow level, the scorecard job's steps only `uses:` of an allowed set (checkout,
+# harden-runner, scorecard-action, upload-artifact, upload-sarif), no job `env` or `defaults`, and one Ubuntu runner
+# label. That is why this workflow, unlike the others, sets neither GOTOOLCHAIN nor a default shell (it runs no shell).
+# Actions are pinned by commit SHA, with the release it is the commit of; see ci.yml for how to re-resolve them.
+
+on:
+  branch_protection_rule:
+  push:
+    branches: [main]
+  schedule:
+    - cron: '29 5 * * 2'
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: scorecard-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  analysis:
+    name: Scorecard analysis
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      contents: read # the checkout
+      security-events: write # upload the SARIF to code scanning
+      id-token: write # sign the published results (publish_results)
+    steps:
+      - uses: step-security/harden-runner@aebdcf6156ab6691adf63218240e476564a1ed4c # v2.23.0
+        with:
+          egress-policy: audit
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: ossf/scorecard-action@23f22cd43608bae7a1f1fa2603d7314dee9538a5 # v2.6.0
+        with:
+          results_file: results.sarif
+          results_format: sarif
+          publish_results: true
+      - uses: github/codeql-action/upload-sarif@915412ff23e8b7659517e607487dbeae018f2934 # v4.39.5
+        with:
+          sarif_file: results.sarif
+          category: scorecard

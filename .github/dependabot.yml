@@ -1,0 +1,32 @@
+# Dependabot: the Go module's dependencies and the workflows' actions, weekly. Minor and patch updates of each
+# ecosystem arrive as one grouped pull request; a major update arrives on its own, to be read on its own.
+# `cooldown` holds back a version until it has been public for a week, so a release that is pulled or found
+# malicious in its first days is never proposed. Commit messages follow Conventional Commits.
+version: 2
+updates:
+  - package-ecosystem: gomod
+    directory: /
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 7
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: chore(deps)
+    groups:
+      go-minor-and-patch:
+        update-types: [minor, patch]
+
+  # Actions are pinned by commit SHA with the release as a comment; Dependabot updates both.
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 7
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: ci(deps)
+    groups:
+      actions-minor-and-patch:
+        update-types: [minor, patch]

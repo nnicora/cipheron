@@ -1,0 +1,29 @@
+name: Dependency review
+
+# A pull request that adds or changes a dependency (go.mod, or an action in a workflow) with a known vulnerability of
+# moderate severity or worse fails here, before it merges. It reads the dependency graph through the API: no checkout.
+# Actions are pinned by commit SHA, with the release it is the commit of; see ci.yml for how to re-resolve them.
+
+on:
+  pull_request:
+
+permissions: {}
+
+concurrency:
+  group: dependency-review-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  dependency-review:
+    name: dependency review
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - uses: step-security/harden-runner@aebdcf6156ab6691adf63218240e476564a1ed4c # v2.23.0
+        with:
+          egress-policy: audit
+      - uses: actions/dependency-review-action@bbc44d14a204704ccc493733616cd1e93a0321ec # v5.0.1
+        with:
+          fail-on-severity: moderate

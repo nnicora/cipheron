@@ -1,0 +1,11 @@
+# zizmor's reviewed exceptions (ci.yml's workflow-lint job). Each one says why the finding does not apply here; a new
+# finding fails CI until it is fixed or reviewed into this file.
+rules:
+  # release.yml calls ci.yml as `uses: ./.github/workflows/ci.yml`, not GitHub's newer self-repository form
+  # (`uses: $/.github/workflows/ci.yml`): actionlint v1.7.12, the latest release and the one CI pins, rejects the `$/`
+  # form ("not following the format ... nor ./path/to/workflow.yml"). The audit's concern, a `./` reference loading
+  # whatever an earlier step left on the runner's filesystem, is a step-level action's; a job-level reusable workflow
+  # is resolved by GitHub from the run's own commit before any runner exists. Switch to `$/` once actionlint accepts it.
+  self-repository:
+    ignore:
+      - release.yml

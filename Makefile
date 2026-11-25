@@ -164,6 +164,8 @@ check-proto-breaking: buf-check-version
 
 # ── Everything ──────────────────────────────────────────────────────────────────────────────────────────────────────
 
-# What CI runs, but the fixture guard (it needs the fixtures committed) and the proto jobs (they need buf and protoc).
+# What CI runs, but the fixture guard (it needs the fixtures committed), the proto jobs (they need buf and protoc), and
+# govulncheck and the workflow lint (actionlint, zizmor), which CI installs pinned by content hash
+# (.github/workflows/ci.yml).
 .PHONY: check
 check: build vet check-fmt check-tidy test check-api check-format-docs check-label-namespace check-gcm-nonce lint
