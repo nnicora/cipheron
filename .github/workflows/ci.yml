@@ -111,6 +111,40 @@ jobs:
       - name: Test with the race detector
         run: make test-race
 
+  # The Java client library (java/): its unit tests, the conformance vectors, the integration tests against the Go
+  # fake (java/harness, built with Go), and the conformance kit through Go's own runner. Maven is the wrapper's
+  # (java/mvnw), pinned with its distribution's SHA-256; its dependencies are pinned by version in java/pom.xml.
+  java:
+    name: java / build / test / conformance
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    steps:
+      - uses: step-security/harden-runner@aebdcf6156ab6691adf63218240e476564a1ed4c # v2.23.0
+        with:
+          egress-policy: audit
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.ref }}
+          persist-credentials: false
+      - uses: actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5 # v7.1.0
+        with:
+          go-version-file: go.mod
+          cache: true
+      - uses: actions/setup-java@d1374f8ac74474200d16ef8ecee22c7ae7a51880 # v6.3.0
+        with:
+          distribution: temurin
+          java-version: "21"
+          cache: maven
+          cache-dependency-path: java/pom.xml
+
+      - name: Build and test (unit, conformance vectors, the Go fake)
+        run: make java-test
+
+      - name: The conformance kit through Go's runner
+        run: make java-conformance
+
   checks:
     name: protocol checks
     runs-on: ubuntu-24.04

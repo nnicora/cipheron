@@ -42,6 +42,10 @@ jobs:
             build-mode: manual
           - language: actions
             build-mode: none
+          # The Java client library (java/), read from source: no build, so no Maven and no dependency download in
+          # a job that may write security events.
+          - language: java-kotlin
+            build-mode: none
     steps:
       - uses: step-security/harden-runner@aebdcf6156ab6691adf63218240e476564a1ed4c # v2.23.0
         with:

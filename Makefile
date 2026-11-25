@@ -162,6 +162,26 @@ check-proto-breaking: buf-check-version
 	  echo "check-proto-breaking: OK — proto/v1 is wire-compatible with $(BUF_BASE)'s"; \
 	fi
 
+# ── The Java client library (java/) ─────────────────────────────────────────────────────────────────────────────────
+
+# Java 21 and the Maven Wrapper (java/mvnw: Maven pinned with its distribution's SHA-256). The fake-backed tests build
+# java/harness with the Go toolchain, so they need Go too.
+MVNW            := ./mvnw -B -ntp
+
+# The library and its unit tests, the conformance vectors, and the integration tests against the Go fake (harness).
+.PHONY: java-test
+java-test:
+	cd java && $(MVNW) verify
+
+# The conformance kit (spec/vectors) through Go's own runner, on the Java adapter: 259 cases, none unsupported.
+.PHONY: java-conformance
+java-conformance:
+	cd java && $(MVNW) -q test-compile dependency:build-classpath -Dmdep.outputFile=target/classpath.txt \
+	  -Dmdep.includeScope=test
+	GOFIPS140=$(GOFIPS140) go run ./java/harness conformance -- java -cp \
+	  "$(CURDIR)/java/target/test-classes:$(CURDIR)/java/target/classes:$$(cat java/target/classpath.txt)" \
+	  io.github.nnicora.cipheron.conformance.ConformanceAdapter
+
 # ── Everything ──────────────────────────────────────────────────────────────────────────────────────────────────────
 
 # What CI runs, but the fixture guard (it needs the fixtures committed), the proto jobs (they need buf and protoc), and

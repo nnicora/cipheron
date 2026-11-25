@@ -17,6 +17,20 @@ updates:
       go-minor-and-patch:
         update-types: [minor, patch]
 
+  # The Java client library's dependencies and Maven plugins (java/pom.xml), and its Maven Wrapper's Maven.
+  - package-ecosystem: maven
+    directory: /java
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 7
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: chore(deps)
+    groups:
+      java-minor-and-patch:
+        update-types: [minor, patch]
+
   # Actions are pinned by commit SHA with the release as a comment; Dependabot updates both.
   - package-ecosystem: github-actions
     directory: /

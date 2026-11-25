@@ -9,6 +9,7 @@
 *.out
 cover.html
 /bin/
+/java/target/
 
 # A local workspace (go.work) is never committed: the module builds on its own.
 go.work

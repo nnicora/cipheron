@@ -7,6 +7,7 @@ the application as a sidecar (a unix socket) or as a service on the network (mut
 This repository is cipheron's **client side and its protocol**:
 
 - the Go client library, `github.com/nnicora/cipheron`;
+- the Java client library, in [java](java);
 - the protocol's contract — the wire API, the byte layouts, the conformance vectors and the frozen fixtures — which
   clients in other languages implement;
 - the gRPC API definition, `proto/v1`.
@@ -52,6 +53,25 @@ An application imports three packages, and no other:
 for other implementers; they follow the protocol's versions, not the library's API, and an application does not import
 them.
 
+## Using the Java library
+
+The Java client library (Java 21 or later, Maven) is in [java](java). It makes the same checks as the Go library, is
+held to the same conformance vectors, and is tested against `cipherontest`. It is not published to a repository yet:
+`cd java && ./mvnw install` builds it as `io.github.nnicora:cipheron:0.1.0-SNAPSHOT`.
+
+```java
+try (CipheronClient c = CipheronClient.builder("/run/cipheron/private/cipheron.sock")
+        .serverUid(10443)
+        .requestKeyFile(Path.of("/etc/app/cipheron/payments-api.key"))
+        .profileFingerprint("credentials", "sha256:<what keygen ensure printed>")
+        .requiredPins()
+        .build()) {
+    byte[] ct = c.encrypt("credentials", "s3cret".getBytes(StandardCharsets.UTF_8));
+}
+```
+
+[java/README.md](java/README.md) is its guide: options, operations, errors, and how it is tested.
+
 ## The protocol
 
 | document | what it is |
@@ -74,6 +94,8 @@ make check          # build, vet, tests (FIPS), lint, the docs and fixture check
 make test           # GOFIPS140=v1.26.0 go test ./...
 make test-race      # the race detector on the client and the protocol
 make proto-gen      # regenerate proto/ with the pinned generators (make install-proto-tools)
+make java-test         # the Java library: build and tests, against cipherontest (Java 21)
+make java-conformance  # the Java library held to the conformance vectors
 ```
 
 A change to the protocol — a transcript, a layout, a label, a version — lands here first, with the spec, the vectors
