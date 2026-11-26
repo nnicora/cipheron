@@ -13,6 +13,7 @@ import (
 	"slices"
 	"strconv"
 	"sync/atomic"
+	"syscall"
 	"time"
 
 	"google.golang.org/genproto/googleapis/rpc/errdetails"
@@ -52,6 +53,10 @@ func socketDialer(abs string, serverUID *uint32, id *identityState) func(ctx con
 		}
 		if err := checkServerUID(c, abs, *serverUID); err != nil {
 			_ = c.Close()
+			if errors.Is(err, errServerHungUp) {
+				id.clear() // the listener closed the connection: not an identity refusal (errServerHungUp)
+				return nil, err
+			}
 			id.failed(err)
 			return nil, err
 		}
@@ -60,13 +65,23 @@ func socketDialer(abs string, serverUID *uint32, id *identityState) func(ctx con
 	}
 }
 
-// checkServerUID is WithServerUID's check of one connection. Its refusals are identity errors.
+// errServerHungUp is a connection the listening process closed before its credentials were read. It is not an
+// identity refusal: Darwin answers ENOTCONN for a peer that is gone (peercred), which says nothing about who
+// listens — cipheron itself closes, as it accepts it, a connection from a process no profile lists. The connection
+// is discarded unused, like one to a socket nothing listens on, and the next attempt checks the server again.
+var errServerHungUp = errors.New("cipheron: the server closed the connection before its credentials were read")
+
+// checkServerUID is WithServerUID's check of one connection. Its refusals are identity errors; a server that hung
+// up first is errServerHungUp, which is not.
 func checkServerUID(c net.Conn, abs string, want uint32) error {
 	uc, ok := c.(*net.UnixConn)
 	if !ok {
 		return &identityError{errors.New("cipheron: not a unix-socket connection")}
 	}
 	creds, err := peercred.Of(uc)
+	if errors.Is(err, syscall.ENOTCONN) {
+		return fmt.Errorf("%w: %s: %w", errServerHungUp, abs, err)
+	}
 	if err != nil {
 		return &identityError{fmt.Errorf("cipheron: the credentials of the process serving %s cannot be read: %w", abs, err)}
 	}
